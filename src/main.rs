@@ -50,9 +50,10 @@ static TWO_TRIANGLES_TEXTURE: TextureInfo = TextureInfo {
     depth: None,
 };
 
-static TWO_TRIANGLES_INPUT_FORMATS: [wgpu::VertexFormat; 2]  = [
-    wgpu::VertexFormat::Float4,
-    wgpu::VertexFormat::Float4,
+// (Attribute type, size).
+static TWO_TRIANGLES_INPUT_FORMATS: [(wgpu::VertexFormat, u64); 2]  = [
+    (wgpu::VertexFormat::Float4, 4 * std::mem::size_of::<f32>() as u64),
+    (wgpu::VertexFormat::Float4, 4 * std::mem::size_of::<f32>() as u64)
 ];
 
 static TWO_TRIANGLES_SHADERS: [ShaderModuleInfo; 2]  = [
@@ -149,11 +150,21 @@ fn create_two_triangles_pipeline_bindgroups(device: &wgpu::Device,
         bind_group_layouts: &[&texture_bind_group_layout],
     });
 
-//static TWO_TRIANGLES_SHADERS: [ShaderModuleInfo; 2]  = [
-//    ShaderModuleInfo {name: "two_triangles_vert", source_file: "two_triangles_vert.spv", stage: "vertex"},
-//    ShaderModuleInfo {name: "two_triangles_frag", source_file: "two_triangles_frag.spv", stage: "frag"},
-//];
-//
+
+    // Crete vertex attributes.
+    let mut stride: u64 = 0;
+    let mut vertex_attributes: Vec<wgpu::VertexAttributeDescriptor> = Vec::new();
+    for i in 0..TWO_TRIANGLES_INPUT_FORMATS.len() {
+        vertex_attributes.push(
+            wgpu::VertexAttributeDescriptor {
+                format: TWO_TRIANGLES_INPUT_FORMATS[0].0,
+                offset: stride,
+                shader_location: i as u32,
+            }
+        );
+        stride = stride + TWO_TRIANGLES_INPUT_FORMATS[i].1;  
+    }
+
     print!("\nCreating two triangles pipeline ");
     let render_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
         layout: &render_pipeline_layout,
@@ -185,20 +196,9 @@ fn create_two_triangles_pipeline_bindgroups(device: &wgpu::Device,
         vertex_state: wgpu::VertexStateDescriptor {
             index_format: wgpu::IndexFormat::Uint16,
             vertex_buffers: &[wgpu::VertexBufferDescriptor {
-                stride: 32 as wgpu::BufferAddress,
+                stride: stride,
                 step_mode: wgpu::InputStepMode::Vertex,
-                attributes: &[
-                    wgpu::VertexAttributeDescriptor {
-                        format: wgpu::VertexFormat::Float4,
-                        offset: 0,
-                        shader_location: 0,
-                    },
-                    wgpu::VertexAttributeDescriptor {
-                        format: wgpu::VertexFormat::Float4,
-                        offset: 16 as wgpu::BufferAddress, // 4 * 4,
-                        shader_location: 1,
-                    },
-                ],
+                attributes: &vertex_attributes,
             }],
         },
         sample_count: 1,
