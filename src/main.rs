@@ -50,6 +50,55 @@ static TWO_TRIANGLES_TEXTURE: TextureInfo = TextureInfo {
     depth: None,
 };
 
+// Defines a render pipeline.
+struct RenderPipelineInfo {
+    vertex_shader: ShaderModuleInfo,
+    fragment_shader: Option<ShaderModuleInfo>,
+    bind_groups: Vec<BindGroupInfo>,
+    input_formats: Vec<(wgpu::VertexFormat, u64)>, 
+}
+
+fn create_two_triangles_info() -> RenderPipelineInfo { 
+    let two_triangles_info: RenderPipelineInfo = RenderPipelineInfo {
+        vertex_shader: ShaderModuleInfo {
+            name: "two_triangles_vert",
+            source_file: "two_triangles_vert.spv",
+            stage: "vertex"
+        }, 
+        fragment_shader: Some(ShaderModuleInfo {
+            name: "two_triangles_frag",
+            source_file: "two_triangles_frag.spv",
+            stage: "frag"
+        }), 
+        bind_groups: vec![ 
+            BindGroupInfo {
+                binding: 0,
+                visibility: wgpu::ShaderStage::FRAGMENT,
+                resource: Resource::TextureView(TWO_TRIANGLES_TEXTURE.name),
+                binding_type: wgpu::BindingType::SampledTexture {
+                   multisampled: false,
+                   component_type: wgpu::TextureComponentType::Float,
+                   dimension: wgpu::TextureViewDimension::D2,
+                },
+            }, 
+            BindGroupInfo {
+                binding: 1,
+                visibility: wgpu::ShaderStage::FRAGMENT,
+                resource: Resource::TextureSampler(TWO_TRIANGLES_TEXTURE.name),
+                binding_type: wgpu::BindingType::Sampler {
+                   comparison: true,
+                },
+            },
+        ],
+        input_formats: vec![
+            (wgpu::VertexFormat::Float4, 4 * std::mem::size_of::<f32>() as u64),
+            (wgpu::VertexFormat::Float4, 4 * std::mem::size_of::<f32>() as u64)
+        ],
+    };
+
+    two_triangles_info
+}
+
 // (Attribute type, size).
 static TWO_TRIANGLES_INPUT_FORMATS: [(wgpu::VertexFormat, u64); 2]  = [
     (wgpu::VertexFormat::Float4, 4 * std::mem::size_of::<f32>() as u64),
@@ -87,23 +136,36 @@ fn create_two_triangles_pipeline_bindgroups(device: &wgpu::Device,
                                             sc_desc: &wgpu::SwapChainDescriptor,
                                             shaders: &HashMap<String, wgpu::ShaderModule>,
                                             textures: &HashMap<String, gradu::Texture>,
-                                            buffers: &HashMap<String, gradu::Buffer>)
+                                            buffers: &HashMap<String, gradu::Buffer>,
+                                            rpi: &RenderPipelineInfo)
     -> (wgpu::BindGroup, wgpu::RenderPipeline) {
 
     print!("\nCreating two triangles bind groups. ");
+
+struct RenderPipelineInfo {
+    vertex_shader: ShaderModuleInfo,
+    fragment_shader: Option<ShaderModuleInfo>,
+    bind_groups: Vec<BindGroupInfo>,
+}
 
     let texture_bind_group_layout =
        device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
            bindings: &[
                wgpu::BindGroupLayoutEntry::new(
-                   TWO_TRIANGLES_BIND_GROUPS[0].binding,
-                   TWO_TRIANGLES_BIND_GROUPS[0].visibility,
-                   TWO_TRIANGLES_BIND_GROUPS[0].binding_type.clone(),
+                   rpi.bind_groups[0].binding,
+                   rpi.bind_groups[0].visibility,
+                   rpi.bind_groups[0].binding_type.clone(),
+                   // TWO_TRIANGLES_BIND_GROUPS[0].binding,
+                   // TWO_TRIANGLES_BIND_GROUPS[0].visibility,
+                   // TWO_TRIANGLES_BIND_GROUPS[0].binding_type.clone(),
                ),
                wgpu::BindGroupLayoutEntry::new(
-                   TWO_TRIANGLES_BIND_GROUPS[1].binding,
-                   TWO_TRIANGLES_BIND_GROUPS[1].visibility,
-                   TWO_TRIANGLES_BIND_GROUPS[1].binding_type.clone(),
+                   rpi.bind_groups[1].binding,
+                   rpi.bind_groups[1].visibility,
+                   rpi.bind_groups[1].binding_type.clone(),
+                   // TWO_TRIANGLES_BIND_GROUPS[1].binding,
+                   // TWO_TRIANGLES_BIND_GROUPS[1].visibility,
+                   // TWO_TRIANGLES_BIND_GROUPS[1].binding_type.clone(),
                ),
            ],
            label: None,
@@ -113,8 +175,8 @@ fn create_two_triangles_pipeline_bindgroups(device: &wgpu::Device,
         layout: &texture_bind_group_layout,
         bindings: &[
             wgpu::Binding {
-                binding: TWO_TRIANGLES_BIND_GROUPS[0].binding,
-                resource: match TWO_TRIANGLES_BIND_GROUPS[0].resource {
+                binding: rpi.bind_groups[0].binding,
+                resource: match rpi.bind_groups[0].resource {
                     Resource::TextureView(tw) => {
                         wgpu::BindingResource::TextureView(&textures.get(tw).unwrap().view)
                     },
@@ -127,8 +189,8 @@ fn create_two_triangles_pipeline_bindgroups(device: &wgpu::Device,
                 }
             },
             wgpu::Binding {
-                binding: TWO_TRIANGLES_BIND_GROUPS[1].binding,
-                resource: match TWO_TRIANGLES_BIND_GROUPS[1].resource {
+                binding: rpi.bind_groups[1].binding,
+                resource: match rpi.bind_groups[1].resource {
                     Resource::TextureView(tw) => {
                         wgpu::BindingResource::TextureView(&textures.get(tw).unwrap().view)
                     },
@@ -154,26 +216,26 @@ fn create_two_triangles_pipeline_bindgroups(device: &wgpu::Device,
     // Crete vertex attributes.
     let mut stride: u64 = 0;
     let mut vertex_attributes: Vec<wgpu::VertexAttributeDescriptor> = Vec::new();
-    for i in 0..TWO_TRIANGLES_INPUT_FORMATS.len() {
+    for i in 0..rpi.input_formats.len() {
         vertex_attributes.push(
             wgpu::VertexAttributeDescriptor {
-                format: TWO_TRIANGLES_INPUT_FORMATS[0].0,
+                format: rpi.input_formats[0].0,
                 offset: stride,
                 shader_location: i as u32,
             }
         );
-        stride = stride + TWO_TRIANGLES_INPUT_FORMATS[i].1;  
+        stride = stride + rpi.input_formats[i].1;  
     }
 
     print!("\nCreating two triangles pipeline ");
     let render_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
         layout: &render_pipeline_layout,
         vertex_stage: wgpu::ProgrammableStageDescriptor {
-            module: &shaders.get(TWO_TRIANGLES_SHADERS[0].name).unwrap(),
+            module: &shaders.get(rpi.vertex_shader.name).unwrap(),
             entry_point: "main",
-        },
+        }, // TODO: do case for fragmen_shader == None
         fragment_stage: Some(wgpu::ProgrammableStageDescriptor {
-            module: &shaders.get(TWO_TRIANGLES_SHADERS[1].name).unwrap(),
+            module: &shaders.get(rpi.fragment_shader.as_ref().unwrap().name).unwrap(),
             entry_point: "main",
         }),
         rasterization_state: Some(wgpu::RasterizationStateDescriptor {
@@ -267,13 +329,16 @@ impl State {
         // Storage for compute pipelines.
         let mut compute_pipelines = HashMap::new();
 
+        let two_triangles_info = create_two_triangles_info(); 
+
 
         let (two_triangles_bind_group, two_triangles_render_pipeline) = create_two_triangles_pipeline_bindgroups(
                         &device,
                         &sc_desc,
                         &shaders,
                         &textures,
-                        &buffers);
+                        &buffers,
+                        &two_triangles_info);
 
 
         Self {
