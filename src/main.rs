@@ -3,7 +3,6 @@ use std::io::prelude::*;
 use bytemuck::{Pod, Zeroable};
 
 use cgmath::{prelude::*, Vector3};
-//use cgmath::{Vector3};
 
 enum Example {
     TwoTriangles,
@@ -16,9 +15,8 @@ use winit::{
     window::Window
 };
 
-use gradu::{Camera, RayCamera, CameraController, CameraUniform, Buffer, create_cube};
+use gradu::{Camera, RayCamera, CameraController, CameraUniform, Buffer, create_cube, Mc_uniform_data};
 
-// Map the name and the shader in create_shaders function.
 struct ShaderModuleInfo {
     name: &'static str,
     source_file: &'static str,
@@ -55,15 +53,24 @@ struct RenderPipelineInfo {
 
 struct ComputePipelineInfo {
     compute_shader: ShaderModuleInfo,
-    bind_groups: Vec<BindGroupInfo>,
+    bind_groups: Vec<Vec<BindGroupInfo>>,
 }
 
-enum Pipeline {
-    Render(RenderPipelineInfo),
-    Compute(ComputePipelineInfo),
+//enum PipelineInfo {
+//    Render(RenderPipelineInfo),
+//    Compute(ComputePipelineInfo),
+//}
+
+enum PipelineResult {
+    Render(Vec<wgpu::BindGroup>, wgpu::RenderPipeline),
+    Compute(Vec<wgpu::BindGroup>, wgpu::ComputePipeline),
 }
 
 static CAMERA_UNIFORM_BUFFER_NAME : &'static str = "camera_uniform_buffer";
+static MC_UNIFORM_BUFFER : &'static str = "mc_uniform_buffer";
+static MC_COUNTER_BUFFER : &'static str = "mc_counter_buffer";
+static MC_OUTPUT_BUFFER : &'static str = "mc_output_buffer";
+
 
 // Define two triangles.
   
@@ -89,6 +96,17 @@ static VTN_SHADERS: [ShaderModuleInfo; 2]  = [
     ShaderModuleInfo {name: "vtn_render_vert", source_file: "vtn_render_vert.spv", stage: "vertex"},
     ShaderModuleInfo {name: "vtn_render_frag", source_file: "vtn_render_frag.spv", stage: "frag"},
 ];
+
+static MC_RENDER_SHADERS: [ShaderModuleInfo; 2]  = [
+    ShaderModuleInfo {name: "mc_render_vert", source_file: "mc_render_vert.spv", stage: "vertex"},
+    ShaderModuleInfo {name: "mc_render_frag", source_file: "mc_render_frag.spv", stage: "frag"},
+];
+
+static MARCHING_CUBES_SHADER: ShaderModuleInfo  = ShaderModuleInfo { 
+           name: "mc",
+           source_file: "mc.spv",
+           stage: "compute",
+};
 
 fn create_two_triangles_info() -> RenderPipelineInfo { 
     let two_triangles_info: RenderPipelineInfo = RenderPipelineInfo {
@@ -133,64 +151,165 @@ fn create_two_triangles_info() -> RenderPipelineInfo {
     two_triangles_info
 }
 
- fn vtn_renderer_info() -> RenderPipelineInfo { 
-    let vtn_renderer_info: RenderPipelineInfo = RenderPipelineInfo {
-        vertex_shader: ShaderModuleInfo {
-            name: VTN_SHADERS[0].name,
-            source_file: VTN_SHADERS[0].source_file,
-            stage: "vertex"
-        }, 
-        fragment_shader: Some(ShaderModuleInfo {
-            name: VTN_SHADERS[1].name,
-            source_file: VTN_SHADERS[1].source_file,
-            stage: "frag"
-        }), 
-        bind_groups:
-            vec![ 
-                vec![
-                    BindGroupInfo {
-                             binding: 0,
-                             visibility: wgpu::ShaderStage::VERTEX | wgpu::ShaderStage::FRAGMENT,
-                             resource: Resource::Buffer(CAMERA_UNIFORM_BUFFER_NAME),
-                             binding_type: wgpu::BindingType::UniformBuffer {
-                                dynamic: false,
-                                min_binding_size: None,
-                             },
-                    }, 
-                ],
-                vec![
-                    BindGroupInfo {
-                             binding: 0,
-                             visibility: wgpu::ShaderStage::FRAGMENT,
-                             resource: Resource::TextureView(TWO_TRIANGLES_TEXTURE.name),
-                             binding_type: wgpu::BindingType::SampledTexture {
-                                multisampled: false,
-                                component_type: wgpu::TextureComponentType::Float,
-                                dimension: wgpu::TextureViewDimension::D2,
-                             },
-                    }, 
-                    BindGroupInfo {
-                        binding: 1,
-                        visibility: wgpu::ShaderStage::FRAGMENT,
-                        resource: Resource::TextureSampler(TWO_TRIANGLES_TEXTURE.name),
-                        binding_type: wgpu::BindingType::Sampler {
-                           comparison: true,
-                        },
-                    },
-                ],
-            ],
-            input_formats: vec![
-                (wgpu::VertexFormat::Float3, 3 * std::mem::size_of::<f32>() as u64),
-                (wgpu::VertexFormat::Float2, 2 * std::mem::size_of::<f32>() as u64),
-                (wgpu::VertexFormat::Float3, 3 * std::mem::size_of::<f32>() as u64)
-            ],
-     };
- 
-     vtn_renderer_info
- }
+fn vtn_renderer_info() -> RenderPipelineInfo { 
+   let vtn_renderer_info: RenderPipelineInfo = RenderPipelineInfo {
+       vertex_shader: ShaderModuleInfo {
+           name: VTN_SHADERS[0].name,
+           source_file: VTN_SHADERS[0].source_file,
+           stage: "vertex"
+       }, 
+       fragment_shader: Some(ShaderModuleInfo {
+           name: VTN_SHADERS[1].name,
+           source_file: VTN_SHADERS[1].source_file,
+           stage: "frag"
+       }), 
+       bind_groups:
+           vec![ 
+               vec![
+                   BindGroupInfo {
+                            binding: 0,
+                            visibility: wgpu::ShaderStage::VERTEX | wgpu::ShaderStage::FRAGMENT,
+                            resource: Resource::Buffer(CAMERA_UNIFORM_BUFFER_NAME),
+                            binding_type: wgpu::BindingType::UniformBuffer {
+                               dynamic: false,
+                               min_binding_size: None,
+                            },
+                   }, 
+               ],
+               vec![
+                   BindGroupInfo {
+                            binding: 0,
+                            visibility: wgpu::ShaderStage::FRAGMENT,
+                            resource: Resource::TextureView(TWO_TRIANGLES_TEXTURE.name),
+                            binding_type: wgpu::BindingType::SampledTexture {
+                               multisampled: false,
+                               component_type: wgpu::TextureComponentType::Float,
+                               dimension: wgpu::TextureViewDimension::D2,
+                            },
+                   }, 
+                   BindGroupInfo {
+                       binding: 1,
+                       visibility: wgpu::ShaderStage::FRAGMENT,
+                       resource: Resource::TextureSampler(TWO_TRIANGLES_TEXTURE.name),
+                       binding_type: wgpu::BindingType::Sampler {
+                          comparison: true,
+                       },
+                   },
+               ],
+           ],
+           input_formats: vec![
+               (wgpu::VertexFormat::Float3, 3 * std::mem::size_of::<f32>() as u64),
+               (wgpu::VertexFormat::Float2, 2 * std::mem::size_of::<f32>() as u64),
+               (wgpu::VertexFormat::Float3, 3 * std::mem::size_of::<f32>() as u64)
+           ],
+    };
+
+    vtn_renderer_info
+}
+
+fn mc_renderer_info() -> RenderPipelineInfo { 
+   let mc_renderer_info: RenderPipelineInfo = RenderPipelineInfo {
+       vertex_shader: ShaderModuleInfo {
+           name: MC_RENDER_SHADERS[0].name,
+           source_file: MC_RENDER_SHADERS[0].source_file,
+           stage: "vertex"
+       }, 
+       fragment_shader: Some(ShaderModuleInfo {
+           name: MC_RENDER_SHADERS[1].name,
+           source_file: MC_RENDER_SHADERS[1].source_file,
+           stage: "frag"
+       }), 
+       bind_groups:
+           vec![ 
+               vec![
+                   BindGroupInfo {
+                            binding: 0,
+                            visibility: wgpu::ShaderStage::VERTEX | wgpu::ShaderStage::FRAGMENT,
+                            resource: Resource::Buffer(CAMERA_UNIFORM_BUFFER_NAME),
+                            binding_type: wgpu::BindingType::UniformBuffer {
+                               dynamic: false,
+                               min_binding_size: None,
+                            },
+                   }, 
+               ],
+               vec![
+                   BindGroupInfo {
+                            binding: 0,
+                            visibility: wgpu::ShaderStage::FRAGMENT,
+                            resource: Resource::TextureView(TWO_TRIANGLES_TEXTURE.name),
+                            binding_type: wgpu::BindingType::SampledTexture {
+                               multisampled: false,
+                               component_type: wgpu::TextureComponentType::Float,
+                               dimension: wgpu::TextureViewDimension::D2,
+                            },
+                   }, 
+                   BindGroupInfo {
+                       binding: 1,
+                       visibility: wgpu::ShaderStage::FRAGMENT,
+                       resource: Resource::TextureSampler(TWO_TRIANGLES_TEXTURE.name),
+                       binding_type: wgpu::BindingType::Sampler {
+                          comparison: true,
+                       },
+                   },
+               ],
+           ],
+           input_formats: vec![
+               (wgpu::VertexFormat::Float4, 4 * std::mem::size_of::<f32>() as u64),
+               (wgpu::VertexFormat::Float4, 4 * std::mem::size_of::<f32>() as u64)
+           ],
+    };
+
+    mc_renderer_info
+}
+
+fn marching_cubes_info() -> ComputePipelineInfo {
+   let marching_cubes_info: ComputePipelineInfo = ComputePipelineInfo {
+       compute_shader: ShaderModuleInfo {
+           name: MARCHING_CUBES_SHADER.name,
+           source_file: MARCHING_CUBES_SHADER.source_file,
+           stage: "compute"
+       }, 
+       bind_groups:
+           vec![ 
+               vec![
+                   BindGroupInfo {
+                            binding: 0,
+                            visibility: wgpu::ShaderStage::COMPUTE,
+                            resource: Resource::Buffer(MC_UNIFORM_BUFFER),
+                            binding_type: wgpu::BindingType::UniformBuffer {
+                               dynamic: false,
+                               min_binding_size: None,
+                            },
+                   }, 
+                   BindGroupInfo {
+                            binding: 0,
+                            visibility: wgpu::ShaderStage::COMPUTE,
+                            resource: Resource::Buffer(MC_COUNTER_BUFFER),
+                            binding_type: wgpu::BindingType::StorageBuffer {
+                               dynamic: false,
+                               readonly: false,
+                               min_binding_size: None,
+                            },
+                   }, 
+                   BindGroupInfo {
+                            binding: 0,
+                            visibility: wgpu::ShaderStage::VERTEX | wgpu::ShaderStage::FRAGMENT,
+                            resource: Resource::Buffer(MC_OUTPUT_BUFFER),
+                            binding_type: wgpu::BindingType::StorageBuffer {
+                               dynamic: false,
+                               readonly: false,
+                               min_binding_size: None,
+                            },
+                   }, 
+               ],
+           ],
+    };
+
+    marching_cubes_info
+}
 
 
-fn create_pipeline_and_bind_groups(device: &wgpu::Device,
+fn create_render_pipeline_and_bind_groups(device: &wgpu::Device,
                                    sc_desc: &wgpu::SwapChainDescriptor,
                                    shaders: &HashMap<String, wgpu::ShaderModule>,
                                    textures: &HashMap<String, gradu::Texture>,
@@ -238,7 +357,7 @@ fn create_pipeline_and_bind_groups(device: &wgpu::Device,
             label: None,
         });
 
-        bind_group_layouts.push(texture_bind_group_layout);;
+        bind_group_layouts.push(texture_bind_group_layout);
         bind_groups.push(bind_group);
     }
 
@@ -246,68 +365,141 @@ fn create_pipeline_and_bind_groups(device: &wgpu::Device,
 
     print!("    * Creating pipeline ... ");
 
-    let render_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-        bind_group_layouts: &bind_group_layouts.iter().collect::<Vec<_>>(), 
-    });
+      let render_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+          bind_group_layouts: &bind_group_layouts.iter().collect::<Vec<_>>(), 
+      });
 
-    // Crete vertex attributes.
-    let mut stride: u64 = 0;
-    let mut vertex_attributes: Vec<wgpu::VertexAttributeDescriptor> = Vec::new();
-    for i in 0..rpi.input_formats.len() {
-        vertex_attributes.push(
-            wgpu::VertexAttributeDescriptor {
-                format: rpi.input_formats[0].0,
-                offset: stride,
-                shader_location: i as u32,
-            }
-        );
-        stride = stride + rpi.input_formats[i].1;  
-    }
+      // Crete vertex attributes.
+      let mut stride: u64 = 0;
+      let mut vertex_attributes: Vec<wgpu::VertexAttributeDescriptor> = Vec::new();
+      for i in 0..rpi.input_formats.len() {
+          vertex_attributes.push(
+              wgpu::VertexAttributeDescriptor {
+                  format: rpi.input_formats[0].0,
+                  offset: stride,
+                  shader_location: i as u32,
+              }
+          );
+          stride = stride + rpi.input_formats[i].1;  
+      }
 
-    let render_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-        layout: &render_pipeline_layout,
-        vertex_stage: wgpu::ProgrammableStageDescriptor {
-            module: &shaders.get(rpi.vertex_shader.name).unwrap(),
-            entry_point: "main",
-        }, // TODO: do case for fragmen_shader == None
-        fragment_stage: Some(wgpu::ProgrammableStageDescriptor {
-            module: &shaders.get(rpi.fragment_shader.as_ref().unwrap().name).unwrap(),
-            entry_point: "main",
-        }),
-        rasterization_state: Some(wgpu::RasterizationStateDescriptor {
-            front_face: wgpu::FrontFace::Ccw,
-            cull_mode: wgpu::CullMode::Back,
-            depth_bias: 0,
-            depth_bias_slope_scale: 0.0,
-            depth_bias_clamp: 0.0,
-        }),
-        primitive_topology: wgpu::PrimitiveTopology::TriangleList,
-        color_states: &[
-            wgpu::ColorStateDescriptor {
-                format: sc_desc.format,
-                color_blend: wgpu::BlendDescriptor::REPLACE,
-                alpha_blend: wgpu::BlendDescriptor::REPLACE,
-                write_mask: wgpu::ColorWrite::ALL,
-            },
-        ],
-        depth_stencil_state: None,
-        vertex_state: wgpu::VertexStateDescriptor {
-            index_format: wgpu::IndexFormat::Uint16,
-            vertex_buffers: &[wgpu::VertexBufferDescriptor {
-                stride: stride,
-                step_mode: wgpu::InputStepMode::Vertex,
-                attributes: &vertex_attributes,
-            }],
-        },
-        sample_count: 1,
-        sample_mask: !0,
-        alpha_to_coverage_enabled: false,
-    });
+      let render_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+          layout: &render_pipeline_layout,
+          vertex_stage: wgpu::ProgrammableStageDescriptor {
+              module: &shaders.get(rpi.vertex_shader.name).unwrap(),
+              entry_point: "main",
+          }, // TODO: do case for fragmen_shader == None
+          fragment_stage: Some(wgpu::ProgrammableStageDescriptor {
+              module: &shaders.get(rpi.fragment_shader.as_ref().unwrap().name).unwrap(),
+              entry_point: "main",
+          }),
+          rasterization_state: Some(wgpu::RasterizationStateDescriptor {
+              front_face: wgpu::FrontFace::Ccw,
+              cull_mode: wgpu::CullMode::Back,
+              depth_bias: 0,
+              depth_bias_slope_scale: 0.0,
+              depth_bias_clamp: 0.0,
+          }),
+          primitive_topology: wgpu::PrimitiveTopology::TriangleList,
+          color_states: &[
+              wgpu::ColorStateDescriptor {
+                  format: sc_desc.format,
+                  color_blend: wgpu::BlendDescriptor::REPLACE,
+                  alpha_blend: wgpu::BlendDescriptor::REPLACE,
+                  write_mask: wgpu::ColorWrite::ALL,
+              },
+          ],
+          depth_stencil_state: None,
+          vertex_state: wgpu::VertexStateDescriptor {
+              index_format: wgpu::IndexFormat::Uint16,
+              vertex_buffers: &[wgpu::VertexBufferDescriptor {
+                  stride: stride,
+                  step_mode: wgpu::InputStepMode::Vertex,
+                  attributes: &vertex_attributes,
+              }],
+          },
+          sample_count: 1,
+          sample_mask: !0,
+          alpha_to_coverage_enabled: false,
+      });
+    
 
     println!(" OK'");
     (bind_groups, render_pipeline)
 }
 
+fn create_compute_pipeline_and_bind_groups(device: &wgpu::Device,
+                                           sc_desc: &wgpu::SwapChainDescriptor,
+                                           shaders: &HashMap<String, wgpu::ShaderModule>,
+                                           textures: &HashMap<String, gradu::Texture>,
+                                           buffers: &HashMap<String, gradu::Buffer>,
+                                           rpi: &ComputePipelineInfo)
+    -> (Vec<wgpu::BindGroup>, wgpu::ComputePipeline) {
+
+    print!("    * Creating bind groups ... ");
+
+    let mut bind_group_layouts: Vec<wgpu::BindGroupLayout> = Vec::new();
+    let mut bind_groups: Vec<wgpu::BindGroup> = Vec::new();
+
+    // Loop over all bind_groups.
+    for b_group in rpi.bind_groups.iter() {
+
+        let layout_entries: Vec<wgpu::BindGroupLayoutEntry>
+            = b_group.into_iter().map(|x| wgpu::BindGroupLayoutEntry::new(
+                x.binding,
+                x.visibility,
+                x.binding_type.clone(),
+              )).collect();
+
+        let texture_bind_group_layout =
+           device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+               bindings: &layout_entries,
+               label: None,
+        });
+
+        let bindings: Vec<wgpu::Binding> 
+            = b_group.into_iter().map(|x| wgpu::Binding {
+                binding: x.binding,
+                resource: match x.resource {
+                        Resource::TextureView(tw) =>  
+                            wgpu::BindingResource::TextureView(&textures.get(tw).unwrap().view),
+                        Resource::TextureSampler(ts) => 
+                            wgpu::BindingResource::Sampler(&textures.get(ts).unwrap().sampler),
+                        Resource::Buffer(b) => 
+                            wgpu::BindingResource::Buffer(buffers.get(b).unwrap().buffer.slice(..)),
+                }
+            }).collect();
+
+        let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            layout: &texture_bind_group_layout,
+            bindings: &bindings,
+            label: None,
+        });
+
+        bind_group_layouts.push(texture_bind_group_layout);
+        bind_groups.push(bind_group);
+    }
+
+    println!(" OK'");
+
+    print!("    * Creating pipeline ... ");
+
+      let compute_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+          bind_group_layouts: &bind_group_layouts.iter().collect::<Vec<_>>(), 
+      });
+
+      let compute_pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+          layout: &compute_pipeline_layout,
+          compute_stage: wgpu::ProgrammableStageDescriptor {
+              module: &shaders.get(rpi.compute_shader.name).unwrap(),
+              entry_point: "main",
+          },
+      });
+    
+
+    println!(" OK'");
+    (bind_groups, compute_pipeline)
+}
 
 
 /// The resources for graphics.
@@ -406,7 +598,8 @@ impl State {
 
         println!("Creating two_triangles pipeline and bind groups.\n");
 
-        let (two_triangles_bind_groups, two_triangles_render_pipeline) = create_pipeline_and_bind_groups(
+        //let (two_triangles_bind_groups, two_triangles_render_pipeline) = create_pipeline_and_bind_groups(
+        let (two_triangles_bind_groups, two_triangles_render_pipeline) = create_render_pipeline_and_bind_groups(
                         &device,
                         &sc_desc,
                         &shaders,
@@ -418,7 +611,7 @@ impl State {
 
         println!("\nCreating vtn_render pipeline and bind groups.\n");
 
-        let (vtn_bind_groups, vtn_render_pipeline) = create_pipeline_and_bind_groups(
+        let (vtn_bind_groups, vtn_render_pipeline) = create_render_pipeline_and_bind_groups(
                         &device,
                         &sc_desc,
                         &shaders,
@@ -453,10 +646,10 @@ impl State {
     } // new(...
 
     pub fn resize(&mut self, new_size: winit::dpi::PhysicalSize<u32>) {
-//        self.size = new_size;
-//        self.sc_desc.width = new_size.width;
-//        self.sc_desc.height = new_size.height;
-//        self.swap_chain = self.device.create_swap_chain(&self.surface, &self.sc_desc);
+        self.size = new_size;
+        self.sc_desc.width = new_size.width;
+        self.sc_desc.height = new_size.height;
+        self.swap_chain = self.device.create_swap_chain(&self.surface, &self.sc_desc);
 //
 //        let depth_texture = Texture::create_depth_texture(&self.device, &self.sc_desc, Some("depth-texture"));
     }
@@ -496,7 +689,6 @@ impl State {
                     wgpu::RenderPassColorAttachmentDescriptor {
                         attachment: &frame.view,
                         resolve_target: None,
-                        //load_op: wgpu::LoadOp::Clear,
                         ops: wgpu::Operations {
                             load: wgpu::LoadOp::Clear(wgpu::Color { 
                                 r: 0.0,
@@ -560,6 +752,15 @@ fn create_shaders(device: &wgpu::Device) -> HashMap<String, wgpu::ShaderModule> 
     print!("    * Creating '{}' shader module from file '{}'",VTN_SHADERS[1].name, VTN_SHADERS[1].source_file);
     shaders.insert(VTN_SHADERS[1].name.to_string(), device.create_shader_module(wgpu::include_spirv!("vtn_render_frag.spv")));
     println!(" ... OK'");
+
+    print!("    * Creating '{}' shader module from file '{}'", MC_RENDER_SHADERS[0].name, MC_RENDER_SHADERS[0].source_file);
+    shaders.insert(MC_RENDER_SHADERS[0].name.to_string(), device.create_shader_module(wgpu::include_spirv!("mc_render_vert.spv")));
+    println!(" ... OK'");
+
+    print!("    * Creating '{}' shader module from file '{}'",MC_RENDER_SHADERS[1].name, MC_RENDER_SHADERS[1].source_file);
+    shaders.insert(MC_RENDER_SHADERS[1].name.to_string(), device.create_shader_module(wgpu::include_spirv!("mc_render_frag.spv")));
+    println!(" ... OK'");
+
 //    shaders.insert("two_triangles_frag".to_string(), fs_module);
 
 //    let mc_module = device.create_shader_module(wgpu::include_spirv!("mc.spv"));
@@ -574,6 +775,10 @@ fn create_shaders(device: &wgpu::Device) -> HashMap<String, wgpu::ShaderModule> 
 
 fn create_vertex_buffers(device: &wgpu::Device, buffers: &mut HashMap::<String, gradu::Buffer>)  {
 
+    println!("\nCreating buffers.\n");
+
+    print!("    * Creating cube buffer as 'cube_buffer'");
+
     // The Cube.
     let vertex_data = create_cube();
     let cube = Buffer::create_buffer_from_data::<f32>(
@@ -583,6 +788,10 @@ fn create_vertex_buffers(device: &wgpu::Device, buffers: &mut HashMap::<String, 
         None);
 
     buffers.insert("cube_buffer".to_string(), cube);
+
+    println!(" ... OK'");
+
+    print!("    * Creating two_triangles buffer as 'two_triangles_buffer'");
 
     // 2-triangles.
 
@@ -602,6 +811,55 @@ fn create_vertex_buffers(device: &wgpu::Device, buffers: &mut HashMap::<String, 
         );
 
     buffers.insert("two_triangles_buffer".to_string(), two_triangles);
+
+    println!(" ... OK'");
+
+    print!("    * Creating marching cubes output buffer as '{}'", MC_OUTPUT_BUFFER);
+
+    let marching_cubes_output = Buffer::create_buffer_from_data::<f32>(
+        device,
+        &vec![0 as f32 ; 64*64*64],
+        wgpu::BufferUsage::STORAGE | wgpu::BufferUsage::COPY_DST |wgpu::BufferUsage::COPY_SRC,
+        None
+    );
+
+    buffers.insert(MC_OUTPUT_BUFFER.to_string(), marching_cubes_output);
+
+    println!(" ... OK'");
+
+    print!("    * Creating marching cubes counter buffer as '{}'", MC_COUNTER_BUFFER);
+
+    let marching_cubes_counter = Buffer::create_buffer_from_data::<u32>(
+        device,
+        &[0 as u32],
+        wgpu::BufferUsage::STORAGE | wgpu::BufferUsage::COPY_DST |wgpu::BufferUsage::COPY_SRC,
+        None
+    );
+
+    buffers.insert(MC_COUNTER_BUFFER.to_string(), marching_cubes_counter);
+
+    println!(" ... OK'");
+
+    print!("    * Creating marching cubes uniform buffer as '{}'", MC_UNIFORM_BUFFER);
+
+    let mc_u_data = Mc_uniform_data {
+        isovalue: 0.0,
+        cube_length: 0.1,
+        base_position: cgmath::Vector4::new(0.0, 0.0, 0.0, 1.0),
+    };
+
+    let marching_cubes_uniform_buffer = Buffer::create_buffer_from_data::<Mc_uniform_data>(
+        device,
+        &[mc_u_data],
+        wgpu::BufferUsage::COPY_DST |wgpu::BufferUsage::UNIFORM,
+        None
+    );
+
+    buffers.insert(MC_COUNTER_BUFFER.to_string(), marching_cubes_uniform_buffer);
+
+    println!(" ... OK'");
+
+    println!("");
 
     //let cube = Buffer::create_buffer_from_data::<f32>(
     //    device,

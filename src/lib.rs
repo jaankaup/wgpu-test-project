@@ -54,10 +54,10 @@ pub const OPENGL_TO_WGPU_MATRIX: cgmath::Matrix4<f32> = cgmath::Matrix4::new(
 /// Uniform data for marching cubes.
 #[repr(C)]
 #[derive(Clone, Copy)]
-struct Mc_uniform_data {
-    isovalue: f32,
-    cube_length: f32,
-    offset: u32,
+pub struct Mc_uniform_data {
+    pub isovalue: f32,
+    pub cube_length: f32,
+    pub base_position: cgmath::Vector4<f32>,
 }
 
 unsafe impl Pod for Mc_uniform_data {}
