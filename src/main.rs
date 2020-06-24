@@ -7,6 +7,7 @@ use cgmath::{prelude::*, Vector3};
 enum Example {
     TwoTriangles,
     Cube,
+    MC,
 }
 
 use winit::{
@@ -70,6 +71,7 @@ static CAMERA_UNIFORM_BUFFER_NAME : &'static str = "camera_uniform_buffer";
 static MC_UNIFORM_BUFFER : &'static str = "mc_uniform_buffer";
 static MC_COUNTER_BUFFER : &'static str = "mc_counter_buffer";
 static MC_OUTPUT_BUFFER : &'static str = "mc_output_buffer";
+static MC_DRAW_BUFFER : &'static str = "mc_draw_buffer";
 
 
 // Define two triangles.
@@ -282,7 +284,7 @@ fn marching_cubes_info() -> ComputePipelineInfo {
                             },
                    }, 
                    BindGroupInfo {
-                            binding: 0,
+                            binding: 1,
                             visibility: wgpu::ShaderStage::COMPUTE,
                             resource: Resource::Buffer(MC_COUNTER_BUFFER),
                             binding_type: wgpu::BindingType::StorageBuffer {
@@ -292,8 +294,8 @@ fn marching_cubes_info() -> ComputePipelineInfo {
                             },
                    }, 
                    BindGroupInfo {
-                            binding: 0,
-                            visibility: wgpu::ShaderStage::VERTEX | wgpu::ShaderStage::FRAGMENT,
+                            binding: 2,
+                            visibility: wgpu::ShaderStage::COMPUTE,
                             resource: Resource::Buffer(MC_OUTPUT_BUFFER),
                             binding_type: wgpu::BindingType::StorageBuffer {
                                dynamic: false,
@@ -436,7 +438,7 @@ fn create_compute_pipeline_and_bind_groups(device: &wgpu::Device,
                                            rpi: &ComputePipelineInfo)
     -> (Vec<wgpu::BindGroup>, wgpu::ComputePipeline) {
 
-    print!("    * Creating bind groups ... ");
+    print!("    * Creating compute bind groups ... ");
 
     let mut bind_group_layouts: Vec<wgpu::BindGroupLayout> = Vec::new();
     let mut bind_groups: Vec<wgpu::BindGroup> = Vec::new();
@@ -482,7 +484,7 @@ fn create_compute_pipeline_and_bind_groups(device: &wgpu::Device,
 
     println!(" OK'");
 
-    print!("    * Creating pipeline ... ");
+    print!("    * Creating compute pipeline ... ");
 
       let compute_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
           bind_group_layouts: &bind_group_layouts.iter().collect::<Vec<_>>(), 
@@ -524,6 +526,11 @@ pub struct State {
     camera_controller: CameraController,
     camera_uniform: CameraUniform,
     example: Example,
+    mc_render_bind_groups: Vec<wgpu::BindGroup>,
+    mc_render_pipeline: wgpu::RenderPipeline,
+    mc_compute_bind_groups: Vec<wgpu::BindGroup>,
+    mc_compute_pipeline: wgpu::ComputePipeline,
+    mc_vertex_count: u32,
 }
 
 
@@ -621,6 +628,54 @@ impl State {
 
         println!("");
 
+        let mc_renderer_info = mc_renderer_info(); 
+
+        println!("\nCreating mc_render pipeline and bind groups.\n");
+
+        let (mc_render_bind_groups, mc_render_pipeline) = create_render_pipeline_and_bind_groups(
+                        &device,
+                        &sc_desc,
+                        &shaders,
+                        &textures,
+                        &buffers,
+                        &mc_renderer_info);
+
+        println!("");
+
+        println!("\nCreating mc_render pipeline and bind groups.\n");
+        let mc_compute_info = marching_cubes_info();
+        let (mc_compute_bind_groups, mc_compute_pipeline) = create_compute_pipeline_and_bind_groups(
+                        &device,
+                        &sc_desc,
+                        &shaders,
+                        &textures,
+                        &buffers,
+                        &mc_compute_info);
+
+        println!("");
+
+        println!("\nLaunching marching cubes.\n");
+
+        let mut mc_encoder = 
+            device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
+        {
+            let mut mc_pass = mc_encoder.begin_compute_pass();
+            mc_pass.set_pipeline(&mc_compute_pipeline);
+            for (e, bgs) in mc_compute_bind_groups.iter().enumerate() {
+                mc_pass.set_bind_group(e as u32, &bgs, &[]);
+            }
+            mc_pass.dispatch(8,8,8);
+        }
+
+        mc_encoder.copy_buffer_to_buffer(&buffers.get(MC_OUTPUT_BUFFER).unwrap().buffer, 0, &buffers.get(MC_DRAW_BUFFER).unwrap().buffer, 0, 4 * 64*64*64);
+        ////mc_encoder.copy_buffer_to_buffer(&buffers.get("mc_triangles").unwrap(), 0, &staging_buffer_output, 0, 128*64*64*4 as wgpu::BufferAddress);
+        //mc_encoder.copy_buffer_to_buffer(&buffers.get("mc_triangles").unwrap(), 0, buffers.get("mc_triangles_draw").unwrap(), 0, 128*64*64*4 as wgpu::BufferAddress);
+
+        // Launch marching cubes.
+        queue.submit(Some(mc_encoder.finish()));
+        let k = &buffers.get(MC_COUNTER_BUFFER).unwrap().to_vec::<u32>(&device, &queue, true).await;
+        let mc_vertex_count = k[0];
+
         Self {
             surface,
             device,
@@ -642,6 +697,11 @@ impl State {
             camera_uniform,
             textures,
             example,
+            mc_render_bind_groups,
+            mc_render_pipeline,
+            mc_compute_bind_groups,
+            mc_compute_pipeline,
+            mc_vertex_count,
         }
     } // new(...
 
@@ -721,6 +781,19 @@ impl State {
                     render_pass.set_vertex_buffer(0, self.buffers.get("cube_buffer").unwrap().buffer.slice(..));
                     render_pass.draw(0..36, 0..12);
                 }
+    // mc_render_bind_groups: Vec<wgpu::BindGroup>,
+    // mc_render_pipeline: wgpu::RenderPipeline,
+    // mc_compute_bind_groups: Vec<wgpu::BindGroup>,
+    // mc_compute_pipeline: wgpu::ComputePipeline,
+    // mc_vertex_count: u32,
+                Example::MC => {
+                    render_pass.set_pipeline(&self.mc_render_pipeline);
+                    for (e, bgs) in self.mc_render_bind_groups.iter().enumerate() {
+                        render_pass.set_bind_group(e as u32, &bgs, &[]);
+                    }
+                    render_pass.set_vertex_buffer(0, self.buffers.get(MC_DRAW_BUFFER).unwrap().buffer.slice(..));
+                    render_pass.draw(0..self.mc_vertex_count, 0..self.mc_vertex_count/3);
+                }
             }
         }
 
@@ -761,13 +834,9 @@ fn create_shaders(device: &wgpu::Device) -> HashMap<String, wgpu::ShaderModule> 
     shaders.insert(MC_RENDER_SHADERS[1].name.to_string(), device.create_shader_module(wgpu::include_spirv!("mc_render_frag.spv")));
     println!(" ... OK'");
 
-//    shaders.insert("two_triangles_frag".to_string(), fs_module);
-
-//    let mc_module = device.create_shader_module(wgpu::include_spirv!("mc.spv"));
-//    let ray_march_module = device.create_shader_module(wgpu::include_spirv!("ray_march.spv"));
-//        
-//    shaders.insert("mc_module".to_string(), mc_module);
-//    shaders.insert("ray_march_module".to_string(), ray_march_module);
+    print!("    * Creating '{}' shader module from file '{}'",MARCHING_CUBES_SHADER.name, MARCHING_CUBES_SHADER.source_file);
+    shaders.insert(MARCHING_CUBES_SHADER.name.to_string(), device.create_shader_module(wgpu::include_spirv!("mc.spv")));
+    println!(" ... OK'");
 
     println!("\nShader created!\n");
     shaders
@@ -819,7 +888,7 @@ fn create_vertex_buffers(device: &wgpu::Device, buffers: &mut HashMap::<String, 
     let marching_cubes_output = Buffer::create_buffer_from_data::<f32>(
         device,
         &vec![0 as f32 ; 64*64*64],
-        wgpu::BufferUsage::STORAGE | wgpu::BufferUsage::COPY_DST |wgpu::BufferUsage::COPY_SRC,
+        wgpu::BufferUsage::STORAGE | wgpu::BufferUsage::COPY_DST |wgpu::BufferUsage::COPY_SRC | wgpu::BufferUsage::VERTEX,
         None
     );
 
@@ -855,7 +924,20 @@ fn create_vertex_buffers(device: &wgpu::Device, buffers: &mut HashMap::<String, 
         None
     );
 
-    buffers.insert(MC_COUNTER_BUFFER.to_string(), marching_cubes_uniform_buffer);
+    buffers.insert(MC_UNIFORM_BUFFER.to_string(), marching_cubes_uniform_buffer);
+
+    println!(" ... OK'");
+
+    print!("    * Creating marching cubes draw buffer as '{}'", MC_DRAW_BUFFER);
+
+    let marching_cubes_draw_buffer = Buffer::create_buffer_from_data::<f32>(
+        device,
+        &vec![0 as f32 ; 64*64*64],
+        wgpu::BufferUsage::COPY_SRC | wgpu::BufferUsage::COPY_DST | wgpu::BufferUsage::VERTEX,
+        None
+    );
+
+    buffers.insert(MC_DRAW_BUFFER.to_string(), marching_cubes_draw_buffer);
 
     println!(" ... OK'");
 
@@ -976,6 +1058,11 @@ async fn run(window: Window, event_loop: EventLoop<()>) {
                                 virtual_keycode: Some(VirtualKeyCode::Key2),
                                 ..
                             } => state.example = Example::Cube,
+                            KeyboardInput {
+                                state: ElementState::Pressed,
+                                virtual_keycode: Some(VirtualKeyCode::Key3),
+                                ..
+                            } => state.example = Example::MC,
                             _ => {}
                         }
                     }
