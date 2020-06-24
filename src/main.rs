@@ -46,6 +46,23 @@ struct TextureInfo {
     depth: Option<u32>,
 }
 
+struct RenderPipelineInfo {
+    vertex_shader: ShaderModuleInfo,
+    fragment_shader: Option<ShaderModuleInfo>,
+    bind_groups: Vec<Vec<BindGroupInfo>>,
+    input_formats: Vec<(wgpu::VertexFormat, u64)>, 
+}
+
+struct ComputePipelineInfo {
+    compute_shader: ShaderModuleInfo,
+    bind_groups: Vec<BindGroupInfo>,
+}
+
+enum Pipeline {
+    Render(RenderPipelineInfo),
+    Compute(ComputePipelineInfo),
+}
+
 static CAMERA_UNIFORM_BUFFER_NAME : &'static str = "camera_uniform_buffer";
 
 // Define two triangles.
@@ -58,21 +75,6 @@ static TWO_TRIANGLES_TEXTURE: TextureInfo = TextureInfo {
     depth: None,
 };
 
-// Defines a render pipeline.
-struct RenderPipelineInfo {
-    vertex_shader: ShaderModuleInfo,
-    fragment_shader: Option<ShaderModuleInfo>,
-    bind_groups: Vec<Vec<BindGroupInfo>>,
-    input_formats: Vec<(wgpu::VertexFormat, u64)>, 
-}
-
-// Defines a compute pipeline.
-struct ComputePipelineInfo {
-    compute_shader: ShaderModuleInfo,
-    bind_groups: Vec<BindGroupInfo>,
-}
-
-// (Attribute type, size).
 static TWO_TRIANGLES_INPUT_FORMATS: [(wgpu::VertexFormat, u64); 2]  = [
     (wgpu::VertexFormat::Float4, 4 * std::mem::size_of::<f32>() as u64),
     (wgpu::VertexFormat::Float4, 4 * std::mem::size_of::<f32>() as u64)
@@ -83,7 +85,7 @@ static TWO_TRIANGLES_SHADERS: [ShaderModuleInfo; 2]  = [
     ShaderModuleInfo {name: "two_triangles_frag", source_file: "two_triangles_frag.spv", stage: "frag"},
 ];
 
-static PTN_SHADERS: [ShaderModuleInfo; 2]  = [
+static VTN_SHADERS: [ShaderModuleInfo; 2]  = [
     ShaderModuleInfo {name: "vtn_render_vert", source_file: "vtn_render_vert.spv", stage: "vertex"},
     ShaderModuleInfo {name: "vtn_render_frag", source_file: "vtn_render_frag.spv", stage: "frag"},
 ];
@@ -134,13 +136,13 @@ fn create_two_triangles_info() -> RenderPipelineInfo {
  fn vtn_renderer_info() -> RenderPipelineInfo { 
     let vtn_renderer_info: RenderPipelineInfo = RenderPipelineInfo {
         vertex_shader: ShaderModuleInfo {
-            name: PTN_SHADERS[0].name,
-            source_file: PTN_SHADERS[0].source_file,
+            name: VTN_SHADERS[0].name,
+            source_file: VTN_SHADERS[0].source_file,
             stage: "vertex"
         }, 
         fragment_shader: Some(ShaderModuleInfo {
-            name: PTN_SHADERS[1].name,
-            source_file: PTN_SHADERS[1].source_file,
+            name: VTN_SHADERS[1].name,
+            source_file: VTN_SHADERS[1].source_file,
             stage: "frag"
         }), 
         bind_groups:
@@ -188,16 +190,15 @@ fn create_two_triangles_info() -> RenderPipelineInfo {
  }
 
 
-/// Create the two triangles pipeline and bind groups.
-fn create_two_triangles_pipeline_bindgroups(device: &wgpu::Device,
-                                            sc_desc: &wgpu::SwapChainDescriptor,
-                                            shaders: &HashMap<String, wgpu::ShaderModule>,
-                                            textures: &HashMap<String, gradu::Texture>,
-                                            buffers: &HashMap<String, gradu::Buffer>,
-                                            rpi: &RenderPipelineInfo)
+fn create_pipeline_and_bind_groups(device: &wgpu::Device,
+                                   sc_desc: &wgpu::SwapChainDescriptor,
+                                   shaders: &HashMap<String, wgpu::ShaderModule>,
+                                   textures: &HashMap<String, gradu::Texture>,
+                                   buffers: &HashMap<String, gradu::Buffer>,
+                                   rpi: &RenderPipelineInfo)
     -> (Vec<wgpu::BindGroup>, wgpu::RenderPipeline) {
 
-    print!("\nCreating two triangles bind groups. ");
+    print!("    * Creating bind groups ... ");
 
     let mut bind_group_layouts: Vec<wgpu::BindGroupLayout> = Vec::new();
     let mut bind_groups: Vec<wgpu::BindGroup> = Vec::new();
@@ -240,6 +241,10 @@ fn create_two_triangles_pipeline_bindgroups(device: &wgpu::Device,
         bind_group_layouts.push(texture_bind_group_layout);;
         bind_groups.push(bind_group);
     }
+
+    println!(" OK'");
+
+    print!("    * Creating pipeline ... ");
 
     let render_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
         bind_group_layouts: &bind_group_layouts.iter().collect::<Vec<_>>(), 
@@ -299,7 +304,7 @@ fn create_two_triangles_pipeline_bindgroups(device: &wgpu::Device,
         alpha_to_coverage_enabled: false,
     });
 
-    println!(" ... OK'");
+    println!(" OK'");
     (bind_groups, render_pipeline)
 }
 
@@ -399,7 +404,9 @@ impl State {
 
         let two_triangles_info = create_two_triangles_info(); 
 
-        let (two_triangles_bind_groups, two_triangles_render_pipeline) = create_two_triangles_pipeline_bindgroups(
+        println!("Creating two_triangles pipeline and bind groups.\n");
+
+        let (two_triangles_bind_groups, two_triangles_render_pipeline) = create_pipeline_and_bind_groups(
                         &device,
                         &sc_desc,
                         &shaders,
@@ -409,13 +416,17 @@ impl State {
 
         let vtn_info = vtn_renderer_info();
 
-        let (vtn_bind_groups, vtn_render_pipeline) = create_two_triangles_pipeline_bindgroups(
+        println!("\nCreating vtn_render pipeline and bind groups.\n");
+
+        let (vtn_bind_groups, vtn_render_pipeline) = create_pipeline_and_bind_groups(
                         &device,
                         &sc_desc,
                         &shaders,
                         &textures,
                         &buffers,
                         &vtn_info);
+
+        println!("");
 
         Self {
             surface,
@@ -534,20 +545,20 @@ fn create_shaders(device: &wgpu::Device) -> HashMap<String, wgpu::ShaderModule> 
     println!("\nCreating shaders.\n");
     let mut shaders = HashMap::new();
 
-    print!("*   Creating 'two_triangles_vert' shader module from file 'two_triangles_vert.spv'");
+    print!("    * Creating 'two_triangles_vert' shader module from file 'two_triangles_vert.spv'");
     shaders.insert("two_triangles_vert".to_string(), device.create_shader_module(wgpu::include_spirv!("two_triangles_vert.spv")));
     println!(" ... OK'");
 
-    print!("*   Creating 'two_triangles_frag' shader module from file 'two_triangles_frag.spv'");
+    print!("    * Creating 'two_triangles_frag' shader module from file 'two_triangles_frag.spv'");
     shaders.insert("two_triangles_frag".to_string(), device.create_shader_module(wgpu::include_spirv!("two_triangles_frag.spv")));
     println!(" ... OK'");
 
-    print!("*   Creating '{}' shader module from file '{}'", PTN_SHADERS[0].name, PTN_SHADERS[0].source_file);
-    shaders.insert(PTN_SHADERS[0].name.to_string(), device.create_shader_module(wgpu::include_spirv!("vtn_render_vert.spv")));
+    print!("    * Creating '{}' shader module from file '{}'", VTN_SHADERS[0].name, VTN_SHADERS[0].source_file);
+    shaders.insert(VTN_SHADERS[0].name.to_string(), device.create_shader_module(wgpu::include_spirv!("vtn_render_vert.spv")));
     println!(" ... OK'");
 
-    print!("*   Creating '{}' shader module from file '{}'",PTN_SHADERS[1].name, PTN_SHADERS[1].source_file);
-    shaders.insert(PTN_SHADERS[1].name.to_string(), device.create_shader_module(wgpu::include_spirv!("vtn_render_frag.spv")));
+    print!("    * Creating '{}' shader module from file '{}'",VTN_SHADERS[1].name, VTN_SHADERS[1].source_file);
+    shaders.insert(VTN_SHADERS[1].name.to_string(), device.create_shader_module(wgpu::include_spirv!("vtn_render_frag.spv")));
     println!(" ... OK'");
 //    shaders.insert("two_triangles_frag".to_string(), fs_module);
 
@@ -557,6 +568,7 @@ fn create_shaders(device: &wgpu::Device) -> HashMap<String, wgpu::ShaderModule> 
 //    shaders.insert("mc_module".to_string(), mc_module);
 //    shaders.insert("ray_march_module".to_string(), ray_march_module);
 
+    println!("\nShader created!\n");
     shaders
 }
 
@@ -604,7 +616,7 @@ fn create_textures(device: &wgpu::Device, queue: &wgpu::Queue, sc_desc: &wgpu::S
 
     println!("\nCreating textures.\n");
     // Two triangles texture.
-    print!("*   Creating texture from file 'grass1.png'");
+    print!("    * Creating texture from file 'grass1.png'");
     let diffuse_texture = Texture::create_from_bytes(&queue, &device, &include_bytes!("grass1.png")[..], None);
     textures.insert(TWO_TRIANGLES_TEXTURE.name.to_string(), diffuse_texture);
     println!(" ... OK'");

@@ -10,7 +10,6 @@ layout(location = 2) out vec3 nor_out;
 
 layout(set=0, binding=0) uniform camerauniform {
     mat4 u_view_proj;
-    mat4 mv;
     vec3 camera_pos;
 };
 

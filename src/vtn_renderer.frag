@@ -8,7 +8,6 @@ layout(location = 0) out vec4 final_color;
 
 layout(set=0, binding=0) uniform camerauniform {
     mat4 u_view_proj;
-    mat4 vm;
     vec3 camera_pos;
 };
 
