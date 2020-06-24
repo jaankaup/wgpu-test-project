@@ -148,7 +148,7 @@ fn create_two_triangles_info() -> RenderPipelineInfo {
                 vec![
                     BindGroupInfo {
                              binding: 0,
-                             visibility: wgpu::ShaderStage::VERTEX,
+                             visibility: wgpu::ShaderStage::VERTEX | wgpu::ShaderStage::FRAGMENT,
                              resource: Resource::Buffer(CAMERA_UNIFORM_BUFFER_NAME),
                              binding_type: wgpu::BindingType::UniformBuffer {
                                 dynamic: false,
@@ -543,11 +543,11 @@ fn create_shaders(device: &wgpu::Device) -> HashMap<String, wgpu::ShaderModule> 
     println!(" ... OK'");
 
     print!("*   Creating '{}' shader module from file '{}'", PTN_SHADERS[0].name, PTN_SHADERS[0].source_file);
-    shaders.insert(PTN_SHADERS[0].name.to_string(), device.create_shader_module(wgpu::include_spirv!("vtn_renderer_vert.spv")));
+    shaders.insert(PTN_SHADERS[0].name.to_string(), device.create_shader_module(wgpu::include_spirv!("vtn_render_vert.spv")));
     println!(" ... OK'");
 
     print!("*   Creating '{}' shader module from file '{}'",PTN_SHADERS[1].name, PTN_SHADERS[1].source_file);
-    shaders.insert(PTN_SHADERS[1].name.to_string(), device.create_shader_module(wgpu::include_spirv!("vtn_renderer_frag.spv")));
+    shaders.insert(PTN_SHADERS[1].name.to_string(), device.create_shader_module(wgpu::include_spirv!("vtn_render_frag.spv")));
     println!(" ... OK'");
 //    shaders.insert("two_triangles_frag".to_string(), fs_module);
 

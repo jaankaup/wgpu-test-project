@@ -7,7 +7,7 @@ use utils::math::{clamp};
 use std::convert::TryInto;
 //use fixed::traits::*;
 
-use cgmath::{prelude::*, Vector3, Point3};
+use cgmath::{prelude::*, Vector3, Vector4, Point3};
 
 use winit::{
     event::{WindowEvent,KeyboardInput,ElementState,VirtualKeyCode,MouseButton},
@@ -757,12 +757,20 @@ impl Camera {
     /// Creates a pv matrix for wgpu.
     pub fn build_projection_matrix(&self) -> cgmath::Matrix4<f32> {
 
-        let pos3 = Point3::new(self.pos.x, self.pos.y,self.pos.z);
-        let view3 = Point3::new(self.view.x + pos3.x, self.view.y + pos3.y, self.view.z + pos3.z);
-        let view = cgmath::Matrix4::look_at(pos3, view3, self.up);
+        //let pos3 = Point3::new(self.pos.x, self.pos.y,self.pos.z);
+        //let view3 = Point3::new(self.view.x + pos3.x, self.view.y + pos3.y, self.view.z + pos3.z);
+        //let view = cgmath::Matrix4::look_at(pos3, view3, self.up);
+        let view = self.build_view_matrix();
         let proj = cgmath::perspective(cgmath::Rad(std::f32::consts::PI/2.0), self.aspect, self.znear, self.zfar);
 
         OPENGL_TO_WGPU_MATRIX * (proj * view)
+    }
+
+    pub fn build_view_matrix(&self) -> cgmath::Matrix4<f32> {
+        let pos3 = Point3::new(self.pos.x, self.pos.y,self.pos.z);
+        let view3 = Point3::new(self.view.x + pos3.x, self.view.y + pos3.y, self.view.z + pos3.z);
+        let view = cgmath::Matrix4::look_at(pos3, view3, self.up);
+        view
     }
 }
 
@@ -1034,17 +1042,23 @@ impl CameraController {
 #[derive(Copy, Clone)]
 pub struct CameraUniform {
     view_proj: cgmath::Matrix4<f32>,
+    mv: cgmath::Matrix4<f32>,
+    pos: cgmath::Vector3<f32>,
 }
 
 impl CameraUniform {
     pub fn new() -> Self {
         Self {
             view_proj: cgmath::Matrix4::identity(),
+            mv: cgmath::Matrix4::identity(),
+            pos: cgmath::Vector3::new(1.0,1.0,1.0),
         }
     }
 
     pub fn update_view_proj(&mut self, camera: &Camera) {
         self.view_proj = camera.build_projection_matrix();
+        self.mv = camera.build_view_matrix();
+        self.pos = camera.pos;
     }
 }
  

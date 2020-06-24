@@ -1,3 +1,3 @@
 #!/bin/bash
 
-./glslangValidator -H -V -o "src/$1" $2
+./glslangValidator -H -V -o "$1" $2
