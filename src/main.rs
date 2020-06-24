@@ -2,8 +2,13 @@ use std::collections::HashMap;
 use std::io::prelude::*;
 use bytemuck::{Pod, Zeroable};
 
-//use cgmath::{prelude::*, Vector3};
-use cgmath::{Vector3};
+use cgmath::{prelude::*, Vector3};
+//use cgmath::{Vector3};
+
+enum Example {
+    TwoTriangles,
+    Cube,
+}
 
 use winit::{
     event::{Event, WindowEvent,KeyboardInput,ElementState,VirtualKeyCode},
@@ -41,6 +46,8 @@ struct TextureInfo {
     depth: Option<u32>,
 }
 
+static CAMERA_UNIFORM_BUFFER_NAME : &'static str = "camera_uniform_buffer";
+
 // Define two triangles.
   
 static TWO_TRIANGLES_TEXTURE: TextureInfo = TextureInfo {
@@ -64,6 +71,22 @@ struct ComputePipelineInfo {
     compute_shader: ShaderModuleInfo,
     bind_groups: Vec<BindGroupInfo>,
 }
+
+// (Attribute type, size).
+static TWO_TRIANGLES_INPUT_FORMATS: [(wgpu::VertexFormat, u64); 2]  = [
+    (wgpu::VertexFormat::Float4, 4 * std::mem::size_of::<f32>() as u64),
+    (wgpu::VertexFormat::Float4, 4 * std::mem::size_of::<f32>() as u64)
+];
+
+static TWO_TRIANGLES_SHADERS: [ShaderModuleInfo; 2]  = [
+    ShaderModuleInfo {name: "two_triangles_vert", source_file: "two_triangles_vert.spv", stage: "vertex"},
+    ShaderModuleInfo {name: "two_triangles_frag", source_file: "two_triangles_frag.spv", stage: "frag"},
+];
+
+static PTN_SHADERS: [ShaderModuleInfo; 2]  = [
+    ShaderModuleInfo {name: "vtn_render_vert", source_file: "vtn_render_vert.spv", stage: "vertex"},
+    ShaderModuleInfo {name: "vtn_render_frag", source_file: "vtn_render_frag.spv", stage: "frag"},
+];
 
 fn create_two_triangles_info() -> RenderPipelineInfo { 
     let two_triangles_info: RenderPipelineInfo = RenderPipelineInfo {
@@ -108,78 +131,62 @@ fn create_two_triangles_info() -> RenderPipelineInfo {
     two_triangles_info
 }
 
-// fn vtn_renderer_info() -> RenderPipelineInfo { 
-//     let vtn_renderer_info: RenderPipelineInfo = RenderPipelineInfo {
-//         vertex_shader: ShaderModuleInfo {
-//             name: "vtn_renderer_vert", //TODO create
-//             source_file: "vtn_renderer_vert.spv", //TODO create
-//             stage: "vertex"
-//         }, 
-//         fragment_shader: Some(ShaderModuleInfo {
-//             name: "vtn_renderer_frag", //TODO create
-//             source_file: "vtn_renderer_frag.spv", //TODO create
-//             stage: "frag"
-//         }), 
-//         bind_groups: vec![ 
-//             BindGroupInfo {
-//                 binding: 0,
-//                 visibility: wgpu::ShaderStage::FRAGMENT,
-//                 resource: Resource::TextureView(TWO_TRIANGLES_TEXTURE.name),
-//                 binding_type: wgpu::BindingType::SampledTexture {
-//                    multisampled: false,
-//                    component_type: wgpu::TextureComponentType::Float,
-//                    dimension: wgpu::TextureViewDimension::D2,
-//                 },
-//             }, 
-//             BindGroupInfo {
-//                 binding: 1,
-//                 visibility: wgpu::ShaderStage::FRAGMENT,
-//                 resource: Resource::TextureSampler(TWO_TRIANGLES_TEXTURE.name),
-//                 binding_type: wgpu::BindingType::Sampler {
-//                    comparison: true,
-//                 },
-//             },
-//         ],
-//         input_formats: vec![
-//             (wgpu::VertexFormat::Float4, 4 * std::mem::size_of::<f32>() as u64),
-//             (wgpu::VertexFormat::Float4, 4 * std::mem::size_of::<f32>() as u64)
-//         ],
-//     };
-// 
-//     two_triangles_info
-// }
+ fn vtn_renderer_info() -> RenderPipelineInfo { 
+    let vtn_renderer_info: RenderPipelineInfo = RenderPipelineInfo {
+        vertex_shader: ShaderModuleInfo {
+            name: PTN_SHADERS[0].name,
+            source_file: PTN_SHADERS[0].source_file,
+            stage: "vertex"
+        }, 
+        fragment_shader: Some(ShaderModuleInfo {
+            name: PTN_SHADERS[1].name,
+            source_file: PTN_SHADERS[1].source_file,
+            stage: "frag"
+        }), 
+        bind_groups:
+            vec![ 
+                vec![
+                    BindGroupInfo {
+                             binding: 0,
+                             visibility: wgpu::ShaderStage::VERTEX,
+                             resource: Resource::Buffer(CAMERA_UNIFORM_BUFFER_NAME),
+                             binding_type: wgpu::BindingType::UniformBuffer {
+                                dynamic: false,
+                                min_binding_size: None,
+                             },
+                    }, 
+                ],
+                vec![
+                    BindGroupInfo {
+                             binding: 0,
+                             visibility: wgpu::ShaderStage::FRAGMENT,
+                             resource: Resource::TextureView(TWO_TRIANGLES_TEXTURE.name),
+                             binding_type: wgpu::BindingType::SampledTexture {
+                                multisampled: false,
+                                component_type: wgpu::TextureComponentType::Float,
+                                dimension: wgpu::TextureViewDimension::D2,
+                             },
+                    }, 
+                    BindGroupInfo {
+                        binding: 1,
+                        visibility: wgpu::ShaderStage::FRAGMENT,
+                        resource: Resource::TextureSampler(TWO_TRIANGLES_TEXTURE.name),
+                        binding_type: wgpu::BindingType::Sampler {
+                           comparison: true,
+                        },
+                    },
+                ],
+            ],
+            input_formats: vec![
+                (wgpu::VertexFormat::Float3, 3 * std::mem::size_of::<f32>() as u64),
+                (wgpu::VertexFormat::Float2, 2 * std::mem::size_of::<f32>() as u64),
+                (wgpu::VertexFormat::Float3, 3 * std::mem::size_of::<f32>() as u64)
+            ],
+     };
+ 
+     vtn_renderer_info
+ }
 
-// (Attribute type, size).
-static TWO_TRIANGLES_INPUT_FORMATS: [(wgpu::VertexFormat, u64); 2]  = [
-    (wgpu::VertexFormat::Float4, 4 * std::mem::size_of::<f32>() as u64),
-    (wgpu::VertexFormat::Float4, 4 * std::mem::size_of::<f32>() as u64)
-];
-
-static TWO_TRIANGLES_SHADERS: [ShaderModuleInfo; 2]  = [
-    ShaderModuleInfo {name: "two_triangles_vert", source_file: "two_triangles_vert.spv", stage: "vertex"},
-    ShaderModuleInfo {name: "two_triangles_frag", source_file: "two_triangles_frag.spv", stage: "frag"},
-];
-
-static TWO_TRIANGLES_BIND_GROUPS: [BindGroupInfo; 2] = [
-    BindGroupInfo {
-        binding: 0,
-        visibility: wgpu::ShaderStage::FRAGMENT,
-        resource: Resource::TextureView(TWO_TRIANGLES_TEXTURE.name),
-        binding_type: wgpu::BindingType::SampledTexture {
-           multisampled: false,
-           component_type: wgpu::TextureComponentType::Float,
-           dimension: wgpu::TextureViewDimension::D2,
-        },
-    }, 
-    BindGroupInfo {
-        binding: 1,
-        visibility: wgpu::ShaderStage::FRAGMENT,
-        resource: Resource::TextureSampler(TWO_TRIANGLES_TEXTURE.name),
-        binding_type: wgpu::BindingType::Sampler {
-           comparison: true,
-        },
-    }, 
-];
 
 /// Create the two triangles pipeline and bind groups.
 fn create_two_triangles_pipeline_bindgroups(device: &wgpu::Device,
@@ -232,8 +239,6 @@ fn create_two_triangles_pipeline_bindgroups(device: &wgpu::Device,
 
         bind_group_layouts.push(texture_bind_group_layout);;
         bind_groups.push(bind_group);
-
-        //all_bind_groups_layouts.push((texture_bind_group_layout, bind_group));
     }
 
     let render_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
@@ -254,7 +259,6 @@ fn create_two_triangles_pipeline_bindgroups(device: &wgpu::Device,
         stride = stride + rpi.input_formats[i].1;  
     }
 
-    print!("\nCreating two triangles pipeline ");
     let render_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
         layout: &render_pipeline_layout,
         vertex_stage: wgpu::ProgrammableStageDescriptor {
@@ -316,10 +320,13 @@ pub struct State {
     textures: HashMap<String,gradu::Texture>,
     two_triangles_bind_groups: Vec<wgpu::BindGroup>,
     two_triangles_render_pipeline: wgpu::RenderPipeline,
-//    camera: Camera,
+    vtn_bind_groups: Vec<wgpu::BindGroup>,
+    vtn_render_pipeline: wgpu::RenderPipeline,
+    camera: Camera,
 //    ray_camera: RayCamera,
-//    camera_controller: CameraController,
-//    camera_uniform: CameraUniform,
+    camera_controller: CameraController,
+    camera_uniform: CameraUniform,
+    example: Example,
 }
 
 
@@ -329,6 +336,8 @@ impl State {
 
     /// Initializes the project resources and returns the intance for State object. 
     pub async fn new(window: &Window) -> Self {
+
+        let example = Example::TwoTriangles;
 
         // Create the surface, adapter, device and the queue.
         let (surface, device, queue, size) = create_sdqs(window).await;
@@ -356,8 +365,39 @@ impl State {
         // Storage for compute pipelines.
         let mut compute_pipelines = HashMap::new();
 
-        let two_triangles_info = create_two_triangles_info(); 
 
+        // The camera.
+        let mut camera = Camera {
+            pos: (1.0, 1.0, 1.0).into(),
+            view: Vector3::new(0.0, 0.0, -1.0).normalize(),
+            up: cgmath::Vector3::unit_y(),
+            aspect: sc_desc.width as f32 / sc_desc.height as f32,
+            fov: (45.0,45.0).into(),
+            znear: 0.1,
+            zfar: 1000.0,
+        };
+
+        // The camera controller.
+        let camera_controller = CameraController::new(0.2,0.5);
+
+        camera.view = Vector3::new(
+            camera_controller.pitch.to_radians().cos() * camera_controller.yaw.to_radians().cos(),
+            camera_controller.pitch.to_radians().sin(),
+            camera_controller.pitch.to_radians().cos() * camera_controller.yaw.to_radians().sin()
+        ).normalize();
+
+        let mut camera_uniform = CameraUniform::new();
+        camera_uniform.update_view_proj(&camera);
+
+        let camera_buffer = Buffer::create_buffer_from_data::<CameraUniform>(
+            &device,
+            &[camera_uniform],
+            wgpu::BufferUsage::UNIFORM | wgpu::BufferUsage::COPY_DST,
+            None);
+
+        buffers.insert(CAMERA_UNIFORM_BUFFER_NAME.to_string(), camera_buffer);
+
+        let two_triangles_info = create_two_triangles_info(); 
 
         let (two_triangles_bind_groups, two_triangles_render_pipeline) = create_two_triangles_pipeline_bindgroups(
                         &device,
@@ -367,6 +407,15 @@ impl State {
                         &buffers,
                         &two_triangles_info);
 
+        let vtn_info = vtn_renderer_info();
+
+        let (vtn_bind_groups, vtn_render_pipeline) = create_two_triangles_pipeline_bindgroups(
+                        &device,
+                        &sc_desc,
+                        &shaders,
+                        &textures,
+                        &buffers,
+                        &vtn_info);
 
         Self {
             surface,
@@ -381,11 +430,14 @@ impl State {
             compute_pipelines,
             two_triangles_bind_groups,
             two_triangles_render_pipeline,
-//            camera,
+            vtn_bind_groups,
+            vtn_render_pipeline,
+            camera,
 //            ray_camera, 
-//            camera_controller,
-//            camera_uniform,
+            camera_controller,
+            camera_uniform,
             textures,
+            example,
         }
     } // new(...
 
@@ -399,23 +451,25 @@ impl State {
     }
 
     pub fn input(&mut self, event: &WindowEvent) -> bool {
-//        let result = self.camera_controller.process_events(event);
-//        if result == true {
-//            self.camera_controller.update_camera(&mut self.camera);
-//            println!("({}, {}, {})",self.camera.pos.x, self.camera.pos.y, self.camera.pos.z);
-//        }
-//        result
-          false
+        let result = self.camera_controller.process_events(event);
+        if result == true {
+            self.camera_controller.update_camera(&mut self.camera);
+            println!("({}, {}, {})",self.camera.pos.x, self.camera.pos.y, self.camera.pos.z);
+        }
+        result
     }
 
     pub fn update(&mut self) {
-//        let ray_camera_uniform_buffer = Buffer::create_buffer_from_data::<Camera>(
-//            &self.device,
-//            &[self.camera],
-//            wgpu::BufferUsage::UNIFORM | wgpu::BufferUsage::COPY_DST,
-//            None);
-//
-//        self.buffers.insert("ray_camera_uniform_buffer".to_string(), ray_camera_uniform_buffer);
+
+        //let mut camera_uniform = CameraUniform::new();
+        self.camera_uniform.update_view_proj(&self.camera);
+
+        // TODO: Create a method for this in Buffer.
+        self.queue.write_buffer(
+            &self.buffers.get(CAMERA_UNIFORM_BUFFER_NAME).unwrap().buffer,
+            0,
+            bytemuck::cast_slice(&[self.camera_uniform])
+        );
 
     }
 
@@ -436,7 +490,7 @@ impl State {
                             load: wgpu::LoadOp::Clear(wgpu::Color { 
                                 r: 0.0,
                                 g: 0.0,
-                                b: 0.1,
+                                b: 0.0,
                                 a: 1.0,
                             }),
                             store: true,
@@ -445,12 +499,26 @@ impl State {
                 ],
                 depth_stencil_attachment: None,
             });
-            render_pass.set_pipeline(&self.two_triangles_render_pipeline);
-            for (e, bgs) in self.two_triangles_bind_groups.iter().enumerate() {
-                render_pass.set_bind_group(e as u32, &bgs, &[]);
+
+            match self.example {
+                Example::TwoTriangles => {
+                    render_pass.set_pipeline(&self.two_triangles_render_pipeline);
+                    for (e, bgs) in self.two_triangles_bind_groups.iter().enumerate() {
+                        render_pass.set_bind_group(e as u32, &bgs, &[]);
+                    }
+                    render_pass.set_vertex_buffer(0, self.buffers.get("two_triangles_buffer").unwrap().buffer.slice(..));
+                    render_pass.draw(0..6, 0..2);
+                }
+
+                Example::Cube => {
+                    render_pass.set_pipeline(&self.vtn_render_pipeline);
+                    for (e, bgs) in self.vtn_bind_groups.iter().enumerate() {
+                        render_pass.set_bind_group(e as u32, &bgs, &[]);
+                    }
+                    render_pass.set_vertex_buffer(0, self.buffers.get("cube_buffer").unwrap().buffer.slice(..));
+                    render_pass.draw(0..36, 0..12);
+                }
             }
-            render_pass.set_vertex_buffer(0, self.buffers.get("two_triangles_buffer").unwrap().buffer.slice(..));
-            render_pass.draw(0..6, 0..2);
         }
 
         //encoder.finish();
@@ -472,6 +540,14 @@ fn create_shaders(device: &wgpu::Device) -> HashMap<String, wgpu::ShaderModule> 
 
     print!("*   Creating 'two_triangles_frag' shader module from file 'two_triangles_frag.spv'");
     shaders.insert("two_triangles_frag".to_string(), device.create_shader_module(wgpu::include_spirv!("two_triangles_frag.spv")));
+    println!(" ... OK'");
+
+    print!("*   Creating '{}' shader module from file '{}'", PTN_SHADERS[0].name, PTN_SHADERS[0].source_file);
+    shaders.insert(PTN_SHADERS[0].name.to_string(), device.create_shader_module(wgpu::include_spirv!("vtn_renderer_vert.spv")));
+    println!(" ... OK'");
+
+    print!("*   Creating '{}' shader module from file '{}'",PTN_SHADERS[1].name, PTN_SHADERS[1].source_file);
+    shaders.insert(PTN_SHADERS[1].name.to_string(), device.create_shader_module(wgpu::include_spirv!("vtn_renderer_frag.spv")));
     println!(" ... OK'");
 //    shaders.insert("two_triangles_frag".to_string(), fs_module);
 
@@ -620,6 +696,16 @@ async fn run(window: Window, event_loop: EventLoop<()>) {
                                 virtual_keycode: Some(VirtualKeyCode::Escape),
                                 ..
                             } => *control_flow = ControlFlow::Exit,
+                            KeyboardInput {
+                                state: ElementState::Pressed,
+                                virtual_keycode: Some(VirtualKeyCode::Key1),
+                                ..
+                            } => state.example = Example::TwoTriangles,
+                            KeyboardInput {
+                                state: ElementState::Pressed,
+                                virtual_keycode: Some(VirtualKeyCode::Key2),
+                                ..
+                            } => state.example = Example::Cube,
                             _ => {}
                         }
                     }
