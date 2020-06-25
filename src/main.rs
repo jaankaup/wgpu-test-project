@@ -1,13 +1,15 @@
 use std::collections::HashMap;
 use std::io::prelude::*;
 use bytemuck::{Pod, Zeroable};
+use rand::prelude::*;
 
-use cgmath::{prelude::*, Vector3};
+use cgmath::{prelude::*, Vector3, Vector4};
 
 enum Example {
     TwoTriangles,
     Cube,
     MC,
+    RANDOM,
 }
 
 use winit::{
@@ -72,7 +74,15 @@ static MC_UNIFORM_BUFFER : &'static str = "mc_uniform_buffer";
 static MC_COUNTER_BUFFER : &'static str = "mc_counter_buffer";
 static MC_OUTPUT_BUFFER : &'static str = "mc_output_buffer";
 static MC_DRAW_BUFFER : &'static str = "mc_draw_buffer";
+static MC_INDEX_BUFFER : &'static str = "mc_index_buffer";
+static RAY_MARCH_OUTPUT_BUFFER : &'static str = "ray_march_output";
+//static RAY_MARCH_OUTPUT_STAGING_BUFFER : &'static str = "ray_march_output_staging";
 
+static RANDOM_TRIANGLES_BUFFER : &'static str = "random_buffer";
+static RANDOM_TRIANGLE_COUNT: u32 = 1000;
+
+
+static DEPTH_TEXTURE_NAME : &'static str = "depth_texture";
 
 // Define two triangles.
   
@@ -107,6 +117,12 @@ static MC_RENDER_SHADERS: [ShaderModuleInfo; 2]  = [
 static MARCHING_CUBES_SHADER: ShaderModuleInfo  = ShaderModuleInfo { 
            name: "mc",
            source_file: "mc.spv",
+           stage: "compute",
+};
+
+static RAY_MARCH_SHADER: ShaderModuleInfo  = ShaderModuleInfo { 
+           name: "ray_march",
+           source_file: "ray.spv",
            stage: "compute",
 };
 
@@ -310,6 +326,33 @@ fn marching_cubes_info() -> ComputePipelineInfo {
     marching_cubes_info
 }
 
+fn ray_march_info() -> ComputePipelineInfo {
+   let ray_march_info: ComputePipelineInfo = ComputePipelineInfo {
+       compute_shader: ShaderModuleInfo {
+           name: RAY_MARCH_SHADER.name,
+           source_file: RAY_MARCH_SHADER.source_file,
+           stage: "compute"
+       }, 
+       bind_groups:
+           vec![ 
+               vec![
+                   BindGroupInfo {
+                            binding: 0,
+                            visibility: wgpu::ShaderStage::COMPUTE,
+                            resource: Resource::Buffer(RAY_MARCH_OUTPUT_BUFFER),
+                            binding_type: wgpu::BindingType::StorageBuffer {
+                               dynamic: false,
+                               readonly: false,
+                               min_binding_size: wgpu::BufferSize::new(256*256),
+                            },
+                   }, 
+               ],
+           ],
+    };
+
+    ray_march_info
+}
+
 
 fn create_render_pipeline_and_bind_groups(device: &wgpu::Device,
                                    sc_desc: &wgpu::SwapChainDescriptor,
@@ -318,28 +361,28 @@ fn create_render_pipeline_and_bind_groups(device: &wgpu::Device,
                                    buffers: &HashMap<String, gradu::Buffer>,
                                    rpi: &RenderPipelineInfo)
     -> (Vec<wgpu::BindGroup>, wgpu::RenderPipeline) {
-
+    
     print!("    * Creating bind groups ... ");
-
+    
     let mut bind_group_layouts: Vec<wgpu::BindGroupLayout> = Vec::new();
     let mut bind_groups: Vec<wgpu::BindGroup> = Vec::new();
-
+    
     // Loop over all bind_groups.
     for b_group in rpi.bind_groups.iter() {
-
+    
         let layout_entries: Vec<wgpu::BindGroupLayoutEntry>
             = b_group.into_iter().map(|x| wgpu::BindGroupLayoutEntry::new(
                 x.binding,
                 x.visibility,
                 x.binding_type.clone(),
               )).collect();
-
+    
         let texture_bind_group_layout =
            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
                bindings: &layout_entries,
                label: None,
         });
-
+    
         let bindings: Vec<wgpu::Binding> 
             = b_group.into_iter().map(|x| wgpu::Binding {
                 binding: x.binding,
@@ -352,25 +395,25 @@ fn create_render_pipeline_and_bind_groups(device: &wgpu::Device,
                             wgpu::BindingResource::Buffer(buffers.get(b).unwrap().buffer.slice(..)),
                 }
             }).collect();
-
+    
         let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             layout: &texture_bind_group_layout,
             bindings: &bindings,
             label: None,
         });
-
+    
         bind_group_layouts.push(texture_bind_group_layout);
         bind_groups.push(bind_group);
     }
-
+    
     println!(" OK'");
-
+    
     print!("    * Creating pipeline ... ");
-
+    
       let render_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
           bind_group_layouts: &bind_group_layouts.iter().collect::<Vec<_>>(), 
       });
-
+    
       // Crete vertex attributes.
       let mut stride: u64 = 0;
       let mut vertex_attributes: Vec<wgpu::VertexAttributeDescriptor> = Vec::new();
@@ -384,45 +427,55 @@ fn create_render_pipeline_and_bind_groups(device: &wgpu::Device,
           );
           stride = stride + rpi.input_formats[i].1;  
       }
-
+    
       let render_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-          layout: &render_pipeline_layout,
-          vertex_stage: wgpu::ProgrammableStageDescriptor {
-              module: &shaders.get(rpi.vertex_shader.name).unwrap(),
-              entry_point: "main",
-          }, // TODO: do case for fragmen_shader == None
-          fragment_stage: Some(wgpu::ProgrammableStageDescriptor {
-              module: &shaders.get(rpi.fragment_shader.as_ref().unwrap().name).unwrap(),
-              entry_point: "main",
-          }),
-          rasterization_state: Some(wgpu::RasterizationStateDescriptor {
-              front_face: wgpu::FrontFace::Ccw,
-              cull_mode: wgpu::CullMode::Back,
-              depth_bias: 0,
-              depth_bias_slope_scale: 0.0,
-              depth_bias_clamp: 0.0,
-          }),
-          primitive_topology: wgpu::PrimitiveTopology::TriangleList,
-          color_states: &[
-              wgpu::ColorStateDescriptor {
-                  format: sc_desc.format,
-                  color_blend: wgpu::BlendDescriptor::REPLACE,
-                  alpha_blend: wgpu::BlendDescriptor::REPLACE,
-                  write_mask: wgpu::ColorWrite::ALL,
-              },
-          ],
-          depth_stencil_state: None,
-          vertex_state: wgpu::VertexStateDescriptor {
-              index_format: wgpu::IndexFormat::Uint16,
-              vertex_buffers: &[wgpu::VertexBufferDescriptor {
-                  stride: stride,
-                  step_mode: wgpu::InputStepMode::Vertex,
-                  attributes: &vertex_attributes,
-              }],
-          },
-          sample_count: 1,
-          sample_mask: !0,
-          alpha_to_coverage_enabled: false,
+        layout: &render_pipeline_layout,
+        vertex_stage: wgpu::ProgrammableStageDescriptor {
+            module: &shaders.get(rpi.vertex_shader.name).unwrap(),
+            entry_point: "main",
+        }, // TODO: do case for fragmen_shader == None
+        fragment_stage: Some(wgpu::ProgrammableStageDescriptor {
+            module: &shaders.get(rpi.fragment_shader.as_ref().unwrap().name).unwrap(),
+            entry_point: "main",
+        }),
+        rasterization_state: Some(wgpu::RasterizationStateDescriptor {
+            front_face: wgpu::FrontFace::Ccw,
+            cull_mode: wgpu::CullMode::Back,
+            depth_bias: 0,
+            depth_bias_slope_scale: 0.0,
+            depth_bias_clamp: 0.0,
+        }),
+        primitive_topology: wgpu::PrimitiveTopology::TriangleList,
+        color_states: &[
+            wgpu::ColorStateDescriptor {
+                format: sc_desc.format,
+                color_blend: wgpu::BlendDescriptor::REPLACE,
+                alpha_blend: wgpu::BlendDescriptor::REPLACE,
+                write_mask: wgpu::ColorWrite::ALL,
+            },
+        ],
+        //depth_stencil_state: None,
+        depth_stencil_state: Some(wgpu::DepthStencilStateDescriptor {
+            format: Texture::DEPTH_FORMAT,
+            depth_write_enabled: true,
+            depth_compare: wgpu::CompareFunction::Less,
+            stencil_front: wgpu::StencilStateFaceDescriptor::IGNORE,
+            stencil_back: wgpu::StencilStateFaceDescriptor::IGNORE,
+            stencil_read_mask: 0,
+            stencil_write_mask: 0,
+            //stencil_read_only: false,
+        }),
+        vertex_state: wgpu::VertexStateDescriptor {
+            index_format: wgpu::IndexFormat::Uint16,
+            vertex_buffers: &[wgpu::VertexBufferDescriptor {
+                stride: stride,
+                step_mode: wgpu::InputStepMode::Vertex,
+                attributes: &vertex_attributes,
+            }],
+        },
+        sample_count: 1,
+        sample_mask: !0,
+        alpha_to_coverage_enabled: false,
       });
     
 
@@ -531,6 +584,8 @@ pub struct State {
     mc_compute_bind_groups: Vec<wgpu::BindGroup>,
     mc_compute_pipeline: wgpu::ComputePipeline,
     mc_vertex_count: u32,
+    ray_march_bind_groups: Vec<wgpu::BindGroup>,
+    ray_march_compute_pipeline: wgpu::ComputePipeline,
 }
 
 
@@ -654,27 +709,109 @@ impl State {
 
         println!("");
 
-        println!("\nLaunching marching cubes.\n");
+        println!("\nCreating ray_march pipeline and bind groups.\n");
+        let ray_march_info = ray_march_info();
+        let (ray_march_bind_groups, ray_march_compute_pipeline) = create_compute_pipeline_and_bind_groups(
+                        &device,
+                        &sc_desc,
+                        &shaders,
+                        &textures,
+                        &buffers,
+                        &ray_march_info);
 
-        let mut mc_encoder = 
-            device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
-        {
-            let mut mc_pass = mc_encoder.begin_compute_pass();
-            mc_pass.set_pipeline(&mc_compute_pipeline);
-            for (e, bgs) in mc_compute_bind_groups.iter().enumerate() {
-                mc_pass.set_bind_group(e as u32, &bgs, &[]);
-            }
-            mc_pass.dispatch(8,8,8);
+        println!("");
+
+        //println!("\nLaunching marching cubes.\n");
+
+        //let mut mc_encoder = 
+        //    device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
+        //{
+        //    let mut mc_pass = mc_encoder.begin_compute_pass();
+        //    mc_pass.set_pipeline(&mc_compute_pipeline);
+        //    for (e, bgs) in mc_compute_bind_groups.iter().enumerate() {
+        //        mc_pass.set_bind_group(e as u32, &bgs, &[]);
+        //    }
+        //    mc_pass.dispatch(8,8,8);
+        //}
+
+        //mc_encoder.copy_buffer_to_buffer(&buffers.get(MC_OUTPUT_BUFFER).unwrap().buffer, 0, &buffers.get(MC_DRAW_BUFFER).unwrap().buffer, 0, 4 * 64*64*64);
+
+        //// Launch marching cubes.
+        //queue.submit(Some(mc_encoder.finish()));
+        //let k = &buffers.get(MC_COUNTER_BUFFER).unwrap().to_vec::<u32>(&device, &queue, true).await;
+        //let mc_vertex_count = k[0];
+        let mc_vertex_count = 678;
+
+        //print!("    * Creating marching cubes index buffer as '{}'", MC_INDEX_BUFFER);
+
+        let mut index_buffer: Vec<u16> = Vec::new();
+
+        //for i in 0..mc_vertex_count {
+        for i in 0..666 {
+            index_buffer.push(i as u16);
         }
 
-        mc_encoder.copy_buffer_to_buffer(&buffers.get(MC_OUTPUT_BUFFER).unwrap().buffer, 0, &buffers.get(MC_DRAW_BUFFER).unwrap().buffer, 0, 4 * 64*64*64);
-        ////mc_encoder.copy_buffer_to_buffer(&buffers.get("mc_triangles").unwrap(), 0, &staging_buffer_output, 0, 128*64*64*4 as wgpu::BufferAddress);
-        //mc_encoder.copy_buffer_to_buffer(&buffers.get("mc_triangles").unwrap(), 0, buffers.get("mc_triangles_draw").unwrap(), 0, 128*64*64*4 as wgpu::BufferAddress);
+        let marching_cubes_index_buffer = Buffer::create_buffer_from_data::<u16>(
+            &device,
+            &index_buffer[..],
+            wgpu::BufferUsage::INDEX,
+            None
+        );
 
-        // Launch marching cubes.
-        queue.submit(Some(mc_encoder.finish()));
-        let k = &buffers.get(MC_COUNTER_BUFFER).unwrap().to_vec::<u32>(&device, &queue, true).await;
-        let mc_vertex_count = k[0];
+        //buffers.insert(MC_INDEX_BUFFER.to_string(), marching_cubes_index_buffer);
+
+        //println!(" ... OK'");
+
+        println!("\nLaunching ray march.\n");
+
+        //let staging_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+        //    label: None,
+        //    256*256*4,
+        //    usage: wgpu::BufferUsage::MAP_READ | wgpu::BufferUsage::COPY_DST,
+        //    mapped_at_creation: false,
+        //});
+
+        let mut ray_encoder = 
+            device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
+        {
+            let mut ray_pass = ray_encoder.begin_compute_pass();
+            ray_pass.set_pipeline(&ray_march_compute_pipeline);
+            for (e, bgs) in ray_march_bind_groups.iter().enumerate() {
+                ray_pass.set_bind_group(e as u32, &bgs, &[]);
+            }
+            ray_pass.dispatch(1,1,1);
+        }
+
+        //ray_encoder.copy_buffer_to_buffer(
+        //    &buffers.get(RAY_MARCH_OUTPUT_BUFFER).unwrap().buffer,
+        //    0,
+        //    &buffers.get(RAY_MARCH_OUTPUT_STAGING_BUFFER).unwrap().buffer,
+        //    0,
+        //    256*256*4);
+        //ray_encoder.copy_buffer_to_buffer(&buffers.get(MC_OUTPUT_BUFFER).unwrap().buffer, 0, &buffers.get(MC_DRAW_BUFFER).unwrap().buffer, 0, 4 * 64*64*64);
+
+        queue.submit(Some(ray_encoder.finish()));
+
+        //let j = &buffers.get(RAY_MARCH_OUTPUT_BUFFER).unwrap().to_vec::<u32>(&device, &queue, true).await;
+        //println!("ray march output result: ");
+        //for i in 0..j.len() {
+        //    if j[i] != 999999 {
+        //        println!("{} :: {}", i, j[i]);
+        //    }
+        //}
+
+        let k = &buffers.get(RAY_MARCH_OUTPUT_BUFFER).unwrap().to_vec::<u32>(&device, &queue, true).await;
+        for i in 0..256*256 {
+            if k[i] == 999999 { continue; } 
+            //if i % 256 == 0 { print!("("); }
+            println!("{} :: {}", i, k[i]);
+            //println!("(i={}, x={},y={})", i, (k[i] & 0xffff0000) >> 16 , k[i] & 0xffff );
+            //if i % 256 == 0 { println!(")"); }
+        }
+
+        println!("The end of ray march output result.");
+
+        println!(" ... OK'");
 
         Self {
             surface,
@@ -702,6 +839,8 @@ impl State {
             mc_compute_bind_groups,
             mc_compute_pipeline,
             mc_vertex_count,
+            ray_march_bind_groups,
+            ray_march_compute_pipeline,
         }
     } // new(...
 
@@ -760,7 +899,15 @@ impl State {
                         },
                     }
                 ],
-                depth_stencil_attachment: None,
+                //depth_stencil_attachment: None,
+                depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachmentDescriptor {
+                    attachment: &self.textures.get("DEPTH_TEXTURE_NAME").unwrap().view,
+                    depth_ops: Some(wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(1.0), 
+                        store: true,
+                        }),
+                    stencil_ops: None,
+                    }),
             });
 
             match self.example {
@@ -781,18 +928,23 @@ impl State {
                     render_pass.set_vertex_buffer(0, self.buffers.get("cube_buffer").unwrap().buffer.slice(..));
                     render_pass.draw(0..36, 0..12);
                 }
-    // mc_render_bind_groups: Vec<wgpu::BindGroup>,
-    // mc_render_pipeline: wgpu::RenderPipeline,
-    // mc_compute_bind_groups: Vec<wgpu::BindGroup>,
-    // mc_compute_pipeline: wgpu::ComputePipeline,
-    // mc_vertex_count: u32,
                 Example::MC => {
                     render_pass.set_pipeline(&self.mc_render_pipeline);
                     for (e, bgs) in self.mc_render_bind_groups.iter().enumerate() {
                         render_pass.set_bind_group(e as u32, &bgs, &[]);
                     }
                     render_pass.set_vertex_buffer(0, self.buffers.get(MC_DRAW_BUFFER).unwrap().buffer.slice(..));
-                    render_pass.draw(0..self.mc_vertex_count, 0..self.mc_vertex_count/3);
+                    render_pass.set_index_buffer(self.buffers.get(MC_INDEX_BUFFER).unwrap().buffer.slice(..));
+                    //render_pass.draw(0..self.mc_vertex_count, 0..self.mc_vertex_count/3);
+                    render_pass.draw_indexed(0..self.mc_vertex_count, 0, 0..self.mc_vertex_count/3);
+                }
+                Example::RANDOM => {
+                    render_pass.set_pipeline(&self.mc_render_pipeline);
+                    for (e, bgs) in self.mc_render_bind_groups.iter().enumerate() {
+                        render_pass.set_bind_group(e as u32, &bgs, &[]);
+                    }
+                    render_pass.set_vertex_buffer(0, self.buffers.get(RANDOM_TRIANGLES_BUFFER).unwrap().buffer.slice(..));
+                    render_pass.draw(0..RANDOM_TRIANGLE_COUNT*3, 0..RANDOM_TRIANGLE_COUNT);
                 }
             }
         }
@@ -836,6 +988,10 @@ fn create_shaders(device: &wgpu::Device) -> HashMap<String, wgpu::ShaderModule> 
 
     print!("    * Creating '{}' shader module from file '{}'",MARCHING_CUBES_SHADER.name, MARCHING_CUBES_SHADER.source_file);
     shaders.insert(MARCHING_CUBES_SHADER.name.to_string(), device.create_shader_module(wgpu::include_spirv!("mc.spv")));
+    println!(" ... OK'");
+
+    print!("    * Creating '{}' shader module from file '{}'",RAY_MARCH_SHADER.name, RAY_MARCH_SHADER.source_file);
+    shaders.insert(RAY_MARCH_SHADER.name.to_string(), device.create_shader_module(wgpu::include_spirv!("ray.spv")));
     println!(" ... OK'");
 
     println!("\nShader created!\n");
@@ -939,17 +1095,82 @@ fn create_vertex_buffers(device: &wgpu::Device, buffers: &mut HashMap::<String, 
 
     buffers.insert(MC_DRAW_BUFFER.to_string(), marching_cubes_draw_buffer);
 
+    let mut rng = thread_rng();
+    let mut random_triangles = Vec::new();
+    for i in 0..RANDOM_TRIANGLE_COUNT {
+        let a1 = rng.gen(); 
+        let a2 = rng.gen(); 
+        let a3 = rng.gen(); 
+        let b1 = rng.gen(); 
+        let b2 = rng.gen(); 
+        let b3 = rng.gen(); 
+        let c1 = rng.gen(); 
+        let c2 = rng.gen(); 
+        let c3 = rng.gen(); 
+        let vert_a = cgmath::Vector3::new(a1,a2,a3);
+        let vert_b = cgmath::Vector3::new(b1,b2,b3);
+        let vert_c = cgmath::Vector3::new(c1,c2,c3);
+    
+        let u = vert_b - vert_c;
+        let v = vert_a - vert_c;
+
+        let normal = u.cross(v).normalize();
+
+        random_triangles.push(vert_a.x);
+        random_triangles.push(vert_a.y);
+        random_triangles.push(vert_a.z);
+        random_triangles.push(1.0);
+
+        random_triangles.push(normal.x);
+        random_triangles.push(normal.y);
+        random_triangles.push(normal.z);
+        random_triangles.push(0.0);
+
+        random_triangles.push(vert_b.x);
+        random_triangles.push(vert_b.y);
+        random_triangles.push(vert_b.z);
+        random_triangles.push(1.0);
+
+        random_triangles.push(normal.x);
+        random_triangles.push(normal.y);
+        random_triangles.push(normal.z);
+        random_triangles.push(0.0);
+
+        random_triangles.push(vert_c.x);
+        random_triangles.push(vert_c.y);
+        random_triangles.push(vert_c.z);
+        random_triangles.push(1.0);
+
+        random_triangles.push(normal.x);
+        random_triangles.push(normal.y);
+        random_triangles.push(normal.z);
+        random_triangles.push(0.0);
+    }
+
+    let random_triangles_buffer = Buffer::create_buffer_from_data::<f32>(
+        device,
+        &random_triangles,
+        wgpu::BufferUsage::VERTEX,
+        None
+    );
+
+    buffers.insert(RANDOM_TRIANGLES_BUFFER.to_string(), random_triangles_buffer);
+
+    println!(" ... OK'");
+
+    print!("    * Creating ray march output buffer as '{}'", RAY_MARCH_OUTPUT_BUFFER);
+
+    let ray_march_output = Buffer::create_buffer_from_data::<u32>(
+        device,
+        &vec![999999 as u32 ; 256*256],
+        wgpu::BufferUsage::STORAGE | wgpu::BufferUsage::COPY_DST | wgpu::BufferUsage::COPY_SRC,
+        None
+    );
+
+    buffers.insert(RAY_MARCH_OUTPUT_BUFFER.to_string(), ray_march_output);
     println!(" ... OK'");
 
     println!("");
-
-    //let cube = Buffer::create_buffer_from_data::<f32>(
-    //    device,
-    //    &vertex_data,
-    //    wgpu::BufferUsage::VERTEX,
-    //    None);
-
-    //buffers.insert("cube_buffer".to_string(), cube);
 }
 
 fn create_textures(device: &wgpu::Device, queue: &wgpu::Queue, sc_desc: &wgpu::SwapChainDescriptor, textures: &mut HashMap<String, gradu::Texture>) {
@@ -961,12 +1182,12 @@ fn create_textures(device: &wgpu::Device, queue: &wgpu::Queue, sc_desc: &wgpu::S
     textures.insert(TWO_TRIANGLES_TEXTURE.name.to_string(), diffuse_texture);
     println!(" ... OK'");
 
-//    let depth_texture = Texture::create_depth_texture(&device, &sc_desc, Some("depth-texture"));
-//    let tritable_texture = Texture::create_tritable(&queue, &device);
-//    let ray_output_texture = Texture::create_texture2D(&queue, &device, 256,256);
-//    textures.insert("depth_texture".to_string(), depth_texture);
-//    textures.insert("tritable_texture".to_string(), tritable_texture);
-//    textures.insert("ray_output_texture".to_string(), ray_output_texture);
+    let depth_texture = Texture::create_depth_texture(&device, &sc_desc, Some("depth-texture"));
+    //let tritable_texture = Texture::create_tritable(&queue, &device);
+    //let ray_output_texture = Texture::create_texture2D(&queue, &device, 256,256);
+    textures.insert("DEPTH_TEXTURE_NAME".to_string(), depth_texture);
+    //textures.insert("tritable_texture".to_string(), tritable_texture);
+    //textures.insert("ray_output_texture".to_string(), ray_output_texture);
 }
 
 async fn create_sdqs(window: &winit::window::Window) -> (wgpu::Surface, wgpu::Device, wgpu::Queue, winit::dpi::PhysicalSize<u32>) {
@@ -1063,6 +1284,11 @@ async fn run(window: Window, event_loop: EventLoop<()>) {
                                 virtual_keycode: Some(VirtualKeyCode::Key3),
                                 ..
                             } => state.example = Example::MC,
+                            KeyboardInput {
+                                state: ElementState::Pressed,
+                                virtual_keycode: Some(VirtualKeyCode::Key4),
+                                ..
+                            } => state.example = Example::RANDOM,
                             _ => {}
                         }
                     }

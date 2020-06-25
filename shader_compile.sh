@@ -10,3 +10,5 @@
 
 ./spirv.sh src/mc_render_vert.spv src/mc_render.vert 
 ./spirv.sh src/mc_render_frag.spv src/mc_render.frag 
+
+./spirv.sh src/ray.spv src/ray.comp 

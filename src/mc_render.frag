@@ -36,6 +36,7 @@ void main() {
 
     vec3 specular_component = specular_coeffient * material_spec_color * light_color;
     vec3 surface_color = texture(sampler2D(t_diffuse, s_diffuse), 0.5 * pos.xy + 0.2 * nor.xz).rgb;
+    //vec3 surface_color = vec3(0.5,0.0,0.0);
     vec3 ambient_component = ambient_coeffience * light_color * surface_color;
     vec3 diffuse_component = diff_coeffient * light_color * surface_color;
 
@@ -43,5 +44,4 @@ void main() {
     float attentuation = 1.0 / (1.0 + attentuation_factor * pow(distance_to_light,2));
 
     final_color = vec4(ambient_component + attentuation * (diffuse_component + specular_component) , 1.0);
-
 }
