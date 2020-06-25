@@ -779,7 +779,7 @@ impl State {
             for (e, bgs) in ray_march_bind_groups.iter().enumerate() {
                 ray_pass.set_bind_group(e as u32, &bgs, &[]);
             }
-            ray_pass.dispatch(1,1,1);
+            ray_pass.dispatch(12,1,1);
         }
 
         //ray_encoder.copy_buffer_to_buffer(
@@ -802,7 +802,7 @@ impl State {
 
         let k = &buffers.get(RAY_MARCH_OUTPUT_BUFFER).unwrap().to_vec::<u32>(&device, &queue, true).await;
         for i in 0..256*256 {
-            if k[i] == 999999 { continue; } 
+            //if k[i] == 999999 { continue; } 
             //if i % 256 == 0 { print!("("); }
             println!("{} :: {}", i, k[i]);
             //println!("(i={}, x={},y={})", i, (k[i] & 0xffff0000) >> 16 , k[i] & 0xffff );

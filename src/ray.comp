@@ -3,7 +3,7 @@
 //#define LOCAL_X_DIM 8
 //#define LOCAL_Y_DIM 8
 
-layout(local_size_x = 4, local_size_y = 4, local_size_z = 4) in;
+layout(local_size_x = 32) in;
 
 //struct Vertex {
 //    vec4 v;
@@ -120,7 +120,8 @@ void main() {
   //frame_output[save_position] = 0 | gl_WorkGroupID.x << 16 | gl_WorkGroupID.y;
   //frame_output[save_position] = 0 | gl_WorkGroupID.x << 16 | gl_WorkGroupID.y;
 
-  frame_output[gl_LocalInvocationIndex] =  gl_LocalInvocationIndex; //converted_color_rgba;  
+  frame_output[gl_GlobalInvocationID.x] =  gl_GlobalInvocationID.x; //converted_color_rgba;  
+  frame_output[100] =  666; //converted_color_rgba;  
   //frame_output[0] = ahhaa;
   //screen.frame_output[gl_LocalInvocationIndex] = 0 | gl_GlobalInvocationID.x << 16 | gl_GlobalInvocationID.y;
   //  0xff0000ff; // converted_color_rgba;
