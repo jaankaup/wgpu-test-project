@@ -386,11 +386,20 @@ fn ray_march_info() -> ComputePipelineInfo {
                    BindGroupInfo {
                             binding: 0,
                             visibility: wgpu::ShaderStage::COMPUTE,
+                            resource: Resource::Buffer(RAY_CAMERA_UNIFORM_BUFFER),
+                            binding_type: wgpu::BindingType::UniformBuffer {
+                               dynamic: false,
+                               min_binding_size: wgpu::BufferSize::new(std::mem::size_of::<RayCamera>() as u64),
+                            },
+                   }, 
+                   BindGroupInfo {
+                            binding: 1,
+                            visibility: wgpu::ShaderStage::COMPUTE,
                             resource: Resource::Buffer(RAY_MARCH_OUTPUT_BUFFER),
                             binding_type: wgpu::BindingType::StorageBuffer {
                                dynamic: false,
                                readonly: false,
-                               min_binding_size: wgpu::BufferSize::new(256*256),
+                               min_binding_size: wgpu::BufferSize::new(256*256*4),
                             },
                    }, 
                ],
@@ -880,7 +889,7 @@ impl State {
             for (e, bgs) in ray_march_bind_groups.iter().enumerate() {
                 ray_pass.set_bind_group(e as u32, &bgs, &[]);
             }
-            ray_pass.dispatch(2,2,1);
+            ray_pass.dispatch(1028,1,1);
         }
 
         //ray_encoder.copy_buffer_to_buffer(
@@ -988,6 +997,7 @@ impl State {
         let result = self.camera_controller.process_events(event);
         if result == true {
             self.camera_controller.update_camera(&mut self.camera);
+            self.camera_controller.update_ray_camera(&mut self.ray_camera);
             println!("({}, {}, {})",self.camera.pos.x, self.camera.pos.y, self.camera.pos.z);
         }
         result
@@ -1015,8 +1025,44 @@ impl State {
     pub fn render(&mut self) {
         let frame = self.swap_chain.get_next_frame().expect("Failed to acquire next swap chain texture").output;
 
+
         let mut encoder = self.device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some("Render Encoder"),
         });
+
+        match self.example {
+                Example::RAY_MARCH => {
+
+                    {
+                        let mut ray_pass = encoder.begin_compute_pass();
+                        ray_pass.set_pipeline(&self.ray_march_compute_pipeline);
+                        for (e, bgs) in self.ray_march_bind_groups.iter().enumerate() {
+                            ray_pass.set_bind_group(e as u32, &bgs, &[]);
+                        }
+                        ray_pass.dispatch(1028,1,1);
+                    }
+
+                    encoder.copy_buffer_to_texture(
+                        wgpu::BufferCopyView {
+                            buffer: &self.buffers.get(RAY_MARCH_OUTPUT_BUFFER).unwrap().buffer,
+                            layout: wgpu::TextureDataLayout {
+                                offset: 0,
+                                bytes_per_row: 256 * 4, //bits_per_pixel * width ,
+                                rows_per_image: 256,
+                            },
+                        },
+                        wgpu::TextureCopyView{
+                            texture: &self.textures.get(RAY_TEXTURE).unwrap().texture,
+                            mip_level: 0,
+                            origin: wgpu::Origin3d::ZERO,
+                        },
+                        wgpu::Extent3d {
+                            width: 256,
+                            height: 256,
+                            depth: 1,
+                    });
+                },
+                _ => {}
+        }
 
         {
             let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {

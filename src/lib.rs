@@ -988,7 +988,7 @@ impl CameraController {
                 self.pitch.to_radians().cos() * self.yaw.to_radians().sin()
             ).normalize();
 
-            println!("view = ({},{},{})", camera.view.x, camera.view.y, camera.view.z);
+            println!("ray_view = ({},{},{})", camera.view.x, camera.view.y, camera.view.z);
 
         }
     }

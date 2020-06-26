@@ -1,6 +1,6 @@
 #version 450
 
-#define LOCAL_X_DIM 32 
+#define LOCAL_X_DIM 64 
 #define LOCAL_Y_DIM 1
 
 layout(local_size_x = LOCAL_X_DIM, local_size_y = LOCAL_Y_DIM) in;
@@ -15,20 +15,20 @@ layout(local_size_x = LOCAL_X_DIM, local_size_y = LOCAL_Y_DIM) in;
 //    vec3 direction;
 //};
 
-//layout(set = 0, binding = 0) uniform RayCamera {
-//    vec3 position;		
-//    vec3 view;			
-//    vec3 up;			
-//    vec2 fov;		
-//    float apertureRadius;
-//    float focalDistance;
-//} camera;
+layout(set = 0, binding = 0) uniform RayCamera {
+    vec3 position;		
+    vec3 view;			
+    vec3 up;			
+    vec2 fov;		
+    float apertureRadius;
+    float focalDistance;
+} camera;
 //
 //// TODO: later
 //layout(set = 1, binding = 0) uniform texture2D t_diffuse;
 //layout(set = 1, binding = 1) uniform sampler s_diffuse;
 
-layout(set = 0, binding = 0) buffer Prkl {
+layout(set = 0, binding = 1) buffer Prkl {
     uint[] frame_output;
 };
 
@@ -103,7 +103,8 @@ void main() {
 
   //  if (depth > max_depth) break;
   //} // for
-  vec4 final_color = vec4(1.0,1.0,1.0,1.0); //texture(sampler2D(t_diffuse, s_diffuse), intersection_point.xy) ;
+  //vec4 final_color = vec4(1.0,0.0,1.0,1.0); //texture(sampler2D(t_diffuse, s_diffuse), intersection_point.xy) ;
+  vec4 final_color = vec4(abs(camera.view.x), abs(camera.view.y), abs(camera.view.z), 1.0); //texture(sampler2D(t_diffuse, s_diffuse), intersection_point.xy) ;
   //uint converted_color_rgba = 0 | uint(final_color.x * 255) << 24 |
 
   // WORKS!
