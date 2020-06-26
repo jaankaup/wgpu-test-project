@@ -2,4 +2,5 @@
 *.swo
 target/
 glslangValidator
+output.txt
 

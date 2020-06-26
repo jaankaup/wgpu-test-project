@@ -255,7 +255,7 @@ impl Texture {
             mip_level_count: 1,
             sample_count: 1,
             dimension: wgpu::TextureDimension::D2,
-            format: wgpu::TextureFormat::Rgba8Unorm,
+            format: wgpu::TextureFormat::Rgba8UnormSrgb,
             usage: wgpu::TextureUsage::SAMPLED | wgpu::TextureUsage::COPY_DST,
             label: label,
         });
@@ -278,7 +278,7 @@ impl Texture {
 
         let view = texture.create_view(&wgpu::TextureViewDescriptor {
             label: None,
-            format: wgpu::TextureFormat::Rgba8Unorm,
+            format: wgpu::TextureFormat::Rgba8UnormSrgb,
             dimension: wgpu::TextureViewDimension::D2,
             aspect: wgpu::TextureAspect::default(),
             base_mip_level: 0,
@@ -324,14 +324,15 @@ impl Texture {
             mip_level_count: 1,
             sample_count: 1,
             dimension: wgpu::TextureDimension::D2,
-            format: wgpu::TextureFormat::Rgba8Unorm,
+            format: wgpu::TextureFormat::Rgba8UnormSrgb,
             usage: wgpu::TextureUsage::SAMPLED | wgpu::TextureUsage::COPY_DST,
             label: None,
         });
 
         let view = texture.create_view(&wgpu::TextureViewDescriptor {
             label: None,
-            format: wgpu::TextureFormat::Rgba8Unorm,
+            //format: wgpu::TextureFormat::Rgba8UnormSrgb,
+            format: wgpu::TextureFormat::Rgba8UnormSrgb,
             dimension: wgpu::TextureViewDimension::D2,
             aspect: wgpu::TextureAspect::default(),
             base_mip_level: 0,
@@ -654,7 +655,7 @@ impl Texture {
             sample_count: 1,
             dimension: wgpu::TextureDimension::D1,
             //format: wgpu::TextureFormat::Rgba8Uint,
-            format: wgpu::TextureFormat::Rgba8Unorm,
+            format: wgpu::TextureFormat::Rgba8UnormSrgb,
             usage: wgpu::TextureUsage::SAMPLED | wgpu::TextureUsage::COPY_DST,
             label: None,
         });
@@ -676,7 +677,7 @@ impl Texture {
 
         let view = texture.create_view(&wgpu::TextureViewDescriptor {
             label: None,
-            format: wgpu::TextureFormat::Rgba8Unorm,
+            format: wgpu::TextureFormat::Rgba8UnormSrgb,
             dimension: wgpu::TextureViewDimension::D1,
             aspect: wgpu::TextureAspect::default(),
             base_mip_level: 0,

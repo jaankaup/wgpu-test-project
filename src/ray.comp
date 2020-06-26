@@ -1,9 +1,9 @@
 #version 450
 
-//#define LOCAL_X_DIM 8
-//#define LOCAL_Y_DIM 8
+#define LOCAL_X_DIM 32 
+#define LOCAL_Y_DIM 1
 
-layout(local_size_x = 32) in;
+layout(local_size_x = LOCAL_X_DIM, local_size_y = LOCAL_Y_DIM) in;
 
 //struct Vertex {
 //    vec4 v;
@@ -103,30 +103,28 @@ void main() {
 
   //  if (depth > max_depth) break;
   //} // for
-  //  vec4 final_color = texture(sampler2D(t_diffuse, s_diffuse), intersection_point.xy) ;
-  //  uint converted_color_rgba = 0 | uint(final_color.x * 255) << 24 |
-  //                                  uint(final_color.y * 255) << 16 |
-  //                                  uint(final_color.z * 255) << 8 |
-  //                                  uint(final_color.w * 255); 
+  vec4 final_color = vec4(1.0,1.0,1.0,1.0); //texture(sampler2D(t_diffuse, s_diffuse), intersection_point.xy) ;
+  //uint converted_color_rgba = 0 | uint(final_color.x * 255) << 24 |
+
+  // WORKS!
+  //uint converted_color_rgba = ((uint(1.0 * 255) & 0xffff) << 24) | // alpha
+  //                            ((uint(0.0 * 255) & 0xffff) << 16) | // blue
+  //                            ((uint(0.0 * 255) & 0xffff) << 8 ) | // green
+  //                            (uint(1.0 * 255) & 0xffff);          // red 
+
+  uint converted_color_rgba = ((uint(final_color.w * 255) & 0xffff) << 24) | // alpha
+                              ((uint(final_color.z * 255) & 0xffff) << 16) | // blue
+                              ((uint(final_color.y * 255) & 0xffff) << 8 ) | // green
+                              (uint(final_color.x * 255) & 0xffff);          // red 
 
   //  //const uint save_position = gl_GlobalInvocationID.y * gl_WorkGroupSize.x + gl_GlobalInvocationID.x;  
   //screen.frame_output[gl_LocalInvocationIndex] = converted_color_rgba;
 
-  //uint save_position = gl_LocalInvocationID.z * gl_WorkGroupSize.x * gl_WorkGroupSize.y + gl_LocalInvocationID.y * gl_WorkGroupSize.x + gl_LocalInvocationID.x;
-  //uint save_position = gl_LocalInvocationID.x * gl_WorkGroupID.x;
-  //uvec3 coord = gl_WorkGroupID * gl_WorkGroupSize + gl_LocalInvocationID;
-  //frame_output[save_position] = 0 | coord.x << 16 | coord.y;
-  //frame_output[save_position] = ((uint(123) & 0xffff) << 16) | (uint(234) & 0xffff);
-  //frame_output[save_position] = 0 | gl_WorkGroupID.x << 16 | gl_WorkGroupID.y;
-  //frame_output[save_position] = 0 | gl_WorkGroupID.x << 16 | gl_WorkGroupID.y;
+  // TOIMIII!!!
+  //frame_output[gl_GlobalInvocationID.x + gl_NumWorkGroups.x * gl_WorkGroupSize.x * gl_GlobalInvocationID.y] = 0 | gl_GlobalInvocationID.x << 16 | gl_GlobalInvocationID.y;
+  frame_output[gl_GlobalInvocationID.x + gl_NumWorkGroups.x * gl_WorkGroupSize.x * gl_GlobalInvocationID.y] = converted_color_rgba;
 
-  frame_output[gl_GlobalInvocationID.x] =  gl_GlobalInvocationID.x; //converted_color_rgba;  
-  frame_output[100] =  666; //converted_color_rgba;  
-  //frame_output[0] = ahhaa;
-  //screen.frame_output[gl_LocalInvocationIndex] = 0 | gl_GlobalInvocationID.x << 16 | gl_GlobalInvocationID.y;
-  //  0xff0000ff; // converted_color_rgba;
-  //const float x_coord = float(gl_GlobalInvocationID.x);
-  //const float y_coord = float(gl_GlobalInvocationID.y);
-  //const float global_x_dim = float(gl_NumWorkGroups.x * LOCAL_X_DIM);
-  //const float global_y_dim = float(gl_NumWorkGroups.y * LOCAL_Y_DIM);
+  // THiS WORKS 1-d!
+  //frame_output[gl_GlobalInvocationID.x] =  gl_GlobalInvocationID.x; //converted_color_rgba;  
+
 }
