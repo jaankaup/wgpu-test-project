@@ -1029,7 +1029,7 @@ impl RayCameraUniform {
             self.up   = cgmath::Vector4::new(camera.up.x, camera.up.y,   camera.up.z, 0.0);  
             self.fov  = cgmath::Vector4::new(camera.fov.x, camera.fov.y, 123.0, 234.0); // 2 dummy values. 
             self.apertureRadius = camera.apertureRadius;
-            self.focalDistance = 1.0;
+            self.focalDistance = camera.focalDistance;
     }
 }
 

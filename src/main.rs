@@ -759,7 +759,7 @@ impl State {
             view: Vector3::new(0.0, 0.0, -1.0).normalize(),
             up: cgmath::Vector3::unit_y(),
             fov: (90.0,90.0).into(),
-            apertureRadius: 1.0, // this is only used in path tracing.
+            apertureRadius: 4.0, // this is only used in path tracing.
             focalDistance: 2.0, // camera distance to the camera screen.
         };
 
