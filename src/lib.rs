@@ -805,8 +805,8 @@ impl CameraController {
             is_left_mouse_pressed: false,
             start_mouse_pos: Some((0 as f64,0 as f64)),
             current_mouse_pos: Some((0 as f64,0 as f64)),
-            pitch: 0.0,
-            yaw: -90.0,
+            pitch: -80.5,
+            yaw: -50.0,
         }
     }
     
@@ -938,7 +938,7 @@ impl CameraController {
                 self.pitch.to_radians().cos() * self.yaw.to_radians().cos(),
                 self.pitch.to_radians().sin(),
                 self.pitch.to_radians().cos() * self.yaw.to_radians().sin()
-            ).normalize();
+            ).normalize_to(1.0);
 
             println!("view = ({},{},{})", camera.view.x, camera.view.y, camera.view.z);
 
@@ -986,7 +986,7 @@ impl CameraController {
                 self.pitch.to_radians().cos() * self.yaw.to_radians().cos(),
                 self.pitch.to_radians().sin(),
                 self.pitch.to_radians().cos() * self.yaw.to_radians().sin()
-            ).normalize();
+            ).normalize_to(1.0);
 
             println!("ray_view = ({},{},{})", camera.view.x, camera.view.y, camera.view.z);
 
@@ -997,41 +997,44 @@ impl CameraController {
 ///////////////////////////////////////////////////////////////////////////////////////
 
 ///// TODO: remove this. Add to the RayCamera. 
-//#[repr(C)]
-//#[derive(Copy, Clone)]
-//pub struct RayCameraUniform {
-//    pos: cgmath::Vector3<f32>,  // eye
-//    view: cgmath::Vector3<f32>, // target    // original: float3
-//    up: cgmath::Vector3<f32>,
-//    fov: cgmath::Vector2<f32>, // fovy
-//    apertureRadius: f32, // new!
-//    focalDistance: f32, // new!
-//}
-//
-//impl RayCameraUniform {
-//    pub fn new() -> Self {
-//        Self {
-//            pos: (1.0, 1.0, 1.0).into(),
-//            view: Vector3::new(0.0, 0.0, -1.0).normalize(),
-//            up: cgmath::Vector3::unit_y(),
-//            fov: ((45.0 as f32).to_radians(),(45.0 as f32).to_radians()).into(),
-//            apertureRadius: 0.0,
-//            focalDistance: 1.0,
-//        }
-//    }
-//
-//    pub fn update(&mut self, camera: &RayCamera) {
-//            self.pos = camera.pos,
-//            self.view = camera.view,
-//            self.up = camera.up,
-//            self.fov = camera_up,
-//            self.apertureRadius = camera.apertureRadius,
-//            self.focalDistance = 1.0,
-//    }
-//}
-//
-//unsafe impl bytemuck::Zeroable for RayCameraUniform {}
-//unsafe impl bytemuck::Pod for RayCameraUniform {}
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub struct RayCameraUniform {
+    pos: cgmath::Vector4<f32>,  // eye
+    view: cgmath::Vector4<f32>, // target    // original: float3
+    up: cgmath::Vector4<f32>,
+    fov: cgmath::Vector4<f32>, // fovy
+    apertureRadius: f32, // new!
+    focalDistance: f32, // new!
+}
+
+impl RayCameraUniform {
+    pub fn new() -> Self {
+        Self {
+            pos: (1.0, 1.0, 1.0, 1.0).into(),
+            view: Vector4::new(0.0, 0.0, -1.0, 0.0).normalize(),
+            up: cgmath::Vector4::unit_y(),
+            fov: ((45.0 as f32).to_radians(),
+                 (45.0 as f32).to_radians(),
+                 111.0,
+                 222.0).into(),
+            apertureRadius: 0.0,
+            focalDistance: 1.0,
+        }
+    }
+
+    pub fn update(&mut self, camera: &RayCamera) {
+            self.pos  = cgmath::Vector4::new(camera.pos.x, camera.pos.y,  camera.pos.z, 1.0);  
+            self.view = cgmath::Vector4::new(camera.view.x, camera.view.y, camera.view.z, 0.0);
+            self.up   = cgmath::Vector4::new(camera.up.x, camera.up.y,   camera.up.z, 0.0);  
+            self.fov  = cgmath::Vector4::new(camera.fov.x, camera.fov.y, 123.0, 234.0); // 2 dummy values. 
+            self.apertureRadius = camera.apertureRadius;
+            self.focalDistance = 1.0;
+    }
+}
+
+unsafe impl bytemuck::Zeroable for RayCameraUniform {}
+unsafe impl bytemuck::Pod for RayCameraUniform {}
 
 ///////////////////////////////////////////////////////////////////////////////////////
 

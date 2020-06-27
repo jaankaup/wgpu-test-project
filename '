@@ -16,23 +16,23 @@ struct Ray {
 };
 
 layout(set = 0, binding = 0) uniform RayCamera {
-    vec4 position;		
-    vec4 view;			
-    vec4 up;			
-    vec4 fov;		
+    vec3 position;		
+    vec3 view;			
+    vec3 up;			
+    vec2 fov;		
     float apertureRadius;
     float focalDistance; // NOT WORKING!
 } camera;
 //
 //// TODO: later
-layout(set = 1, binding = 0) uniform texture2D t_diffuse;
-layout(set = 1, binding = 1) uniform sampler s_diffuse;
+layout(set = 0, binding = 1) uniform texture2D t_diffuse;
+layout(set = 0, binding = 2) uniform sampler s_diffuse;
 
-layout(set = 2, binding = 0) buffer Prkl {
+layout(set = 0, binding = 3) buffer Prkl {
     uint[] frame_output;
 };
 
-layout(set = 3, binding = 0) buffer DebugOut {
+layout(set = 0, binding = 4) buffer DebugOut {
     vec4[] debug_output;
 };
 
@@ -56,10 +56,10 @@ void main() {
   float global_y_dim = float(gl_NumWorkGroups.y * LOCAL_Y_DIM);
 
   vec3 right = normalize(cross(camera.view,camera.up));  
-  //vec3 right = normalize(cross(camera.view,vec3(0.0,1.0,0.0)));  
   vec3 y = normalize(cross(camera.view, right));
 
-  float d = 1.0; //camera.focalDistance;  
+  //float d = 1.0; //camera.focalDistance;  
+  float d = camera.focalDistance;  
   
   vec3 u = (d * tan(camera.fov.x*0.5)) * right; 
   vec3 v = (d * tan(camera.fov.y*0.5)) * y;
@@ -111,13 +111,13 @@ void main() {
 
     //if (depth > max_depth) break;
   } // for
-  //vec4 final_color = texture(sampler2D(t_diffuse, s_diffuse), camera.view.xy) ; 
-  vec4 final_color = texture(sampler2D(t_diffuse, s_diffuse), intersection_point.xz + 0.3 * intersection_point.yy) ;
-  if (depth > 100.0) final_color = vec4(1.0,1.0,1.0,1.0);
-  //vec4 final_color = vec4(depth * 0.1, 0.0, 0.0, 1.0);
+  //vec4 final_color = texture(sampler2D(t_diffuse, s_diffuse), camera.view.xy) ;
+  //vec4 final_color = texture(sampler2D(t_diffuse, s_diffuse), intersection_point.xz) ;
+  vec4 final_color = vec4(depth * 0.1, 0.0, 0.0, 1.0);
 
   //if (length(intersection_point - camera.position) > 500.0) final_color = vec4(0.0,0.0,0.0,1.0);
   //vec4 final_color = vec4(abs(camera.view.x), abs(camera.view.y), abs(camera.view.z), 1.0); //texture(sampler2D(t_diffuse, s_diffuse), intersection_point.xy) ;
+  //uint converted_color_rgba = 0 | uint(final_color.x * 255) << 24 |
 
   // WORKS!
   //uint converted_color_rgba = ((uint(1.0 * 255) & 0xffff) << 24) | // alpha
@@ -135,24 +135,18 @@ void main() {
 
   // TOIMIII!!!
   //uint joo = 0 | ((gl_GlobalInvocationID.x & 0xffff) << 16) | (gl_GlobalInvocationID.y & 0xffff);  
-  frame_output[gl_GlobalInvocationID.x + gl_NumWorkGroups.x * gl_WorkGroupSize.x * gl_GlobalInvocationID.y] = converted_color_rgba;
+  //frame_output[gl_GlobalInvocationID.x + gl_NumWorkGroups.x * gl_WorkGroupSize.x * gl_GlobalInvocationID.y] = converted_color_rgba;
 
-  //frame_output[gl_GlobalInvocationID.x + gl_NumWorkGroups.x *
-  //  gl_WorkGroupSize.x * gl_GlobalInvocationID.y] = uint(depth);
+  frame_output[gl_GlobalInvocationID.x + gl_NumWorkGroups.x *
+    gl_WorkGroupSize.x * gl_GlobalInvocationID.y] = uint(depth);
 
   debug_output[gl_GlobalInvocationID.x + gl_NumWorkGroups.x *
-  gl_WorkGroupSize.x * gl_GlobalInvocationID.y] = vec4(camera.up, 13.0 );
+    gl_WorkGroupSize.x * gl_GlobalInvocationID.y] = vec4(tan(camera.fov.x*0.5) , d, 12.0, 13.0 );
 
 //  vec3 point_on_plane = alpha * u + beta * v;
-
-  // indeksointi ok
   //uint joo = 0 | ((gl_GlobalInvocationID.x & 0xffff) << 16) | (gl_GlobalInvocationID.y & 0xffff);  
-  //debug_output[gl_GlobalInvocationID.x + gl_NumWorkGroups.x * gl_WorkGroupSize.x * gl_GlobalInvocationID.y] =
-  //      uvec4(gl_GlobalInvocationID.x + gl_NumWorkGroups.x * gl_WorkGroupSize.x
-  //      * gl_GlobalInvocationID.y, 
-  //            gl_GlobalInvocationID.x,             
-  //            gl_GlobalInvocationID.y,
-  //            666);
+  //frame_output[gl_GlobalInvocationID.x + gl_NumWorkGroups.x *
+  //gl_WorkGroupSize.x * gl_GlobalInvocationID.y] = joo;
 
   // THiS WORKS 1-d!
   //frame_output[gl_GlobalInvocationID.x] =  gl_GlobalInvocationID.x; //converted_color_rgba;  

@@ -3,7 +3,7 @@ use std::io::prelude::*;
 use bytemuck::{Pod, Zeroable};
 use rand::prelude::*;
 
-use cgmath::{prelude::*, Vector3, Vector4};
+use cgmath::{prelude::*, Vector3, Vector4, Point3};
 
 enum Example {
     TwoTriangles,
@@ -19,7 +19,7 @@ use winit::{
     window::Window
 };
 
-use gradu::{Camera, RayCamera, CameraController, CameraUniform, Buffer, create_cube, Mc_uniform_data};
+use gradu::{Camera, RayCamera, CameraController, CameraUniform, Buffer, create_cube, Mc_uniform_data, RayCameraUniform};
 
 struct ShaderModuleInfo {
     name: &'static str,
@@ -79,6 +79,7 @@ static MC_DRAW_BUFFER : &'static str = "mc_draw_buffer";
 static MC_INDEX_BUFFER : &'static str = "mc_index_buffer";
 static RAY_MARCH_OUTPUT_BUFFER : &'static str = "ray_march_output";
 static RAY_TEXTURE : &'static str = "ray_texture";
+static RAY_DEBUG_BUFFER : &'static str = "ray_debug_buffer";
 //static RAY_MARCH_OUTPUT_STAGING_BUFFER : &'static str = "ray_march_output_staging";
 
 static RANDOM_TRIANGLES_BUFFER : &'static str = "random_buffer";
@@ -384,23 +385,59 @@ fn ray_march_info() -> ComputePipelineInfo {
            vec![ 
                vec![
                    BindGroupInfo {
-                            binding: 0,
-                            visibility: wgpu::ShaderStage::COMPUTE,
-                            resource: Resource::Buffer(RAY_CAMERA_UNIFORM_BUFFER),
-                            binding_type: wgpu::BindingType::UniformBuffer {
-                               dynamic: false,
-                               min_binding_size: wgpu::BufferSize::new(std::mem::size_of::<RayCamera>() as u64),
-                            },
-                   }, 
+                        binding: 0,
+                        visibility: wgpu::ShaderStage::COMPUTE,
+                        resource: Resource::Buffer(RAY_CAMERA_UNIFORM_BUFFER),
+                        binding_type: wgpu::BindingType::UniformBuffer {
+                           dynamic: false,
+                           min_binding_size: None, // wgpu::BufferSize::new(std::mem::size_of::<RayCameraUniform>() as u64) * 4,
+                        },
+                   },
+               ],
+               vec![
                    BindGroupInfo {
-                            binding: 1,
-                            visibility: wgpu::ShaderStage::COMPUTE,
-                            resource: Resource::Buffer(RAY_MARCH_OUTPUT_BUFFER),
-                            binding_type: wgpu::BindingType::StorageBuffer {
-                               dynamic: false,
-                               readonly: false,
-                               min_binding_size: wgpu::BufferSize::new(256*256*4),
-                            },
+                        binding: 0,
+                        visibility: wgpu::ShaderStage::COMPUTE,
+                        resource: Resource::TextureView(TWO_TRIANGLES_TEXTURE.name),
+                        binding_type: wgpu::BindingType::SampledTexture {
+                           multisampled: false,
+                           component_type: wgpu::TextureComponentType::Float,
+                           dimension: wgpu::TextureViewDimension::D2,
+                        },
+                   },
+                   BindGroupInfo {
+                        binding: 1,
+                        visibility: wgpu::ShaderStage::COMPUTE,
+                        resource: Resource::TextureView(TWO_TRIANGLES_TEXTURE.name),
+                        binding_type: wgpu::BindingType::SampledTexture {
+                           multisampled: false,
+                           component_type: wgpu::TextureComponentType::Float,
+                           dimension: wgpu::TextureViewDimension::D2,
+                        },
+                   },
+               ],
+               vec![
+                   BindGroupInfo {
+                        binding: 0,
+                        visibility: wgpu::ShaderStage::COMPUTE,
+                        resource: Resource::Buffer(RAY_MARCH_OUTPUT_BUFFER),
+                        binding_type: wgpu::BindingType::StorageBuffer {
+                           dynamic: false,
+                           readonly: false,
+                           min_binding_size: wgpu::BufferSize::new(256*256*4),
+                        },
+                   },
+               ],
+               vec![
+                   BindGroupInfo {
+                        binding: 0,
+                        visibility: wgpu::ShaderStage::COMPUTE,
+                        resource: Resource::Buffer(RAY_DEBUG_BUFFER),
+                        binding_type: wgpu::BindingType::StorageBuffer {
+                           dynamic: false,
+                           readonly: false,
+                           min_binding_size: wgpu::BufferSize::new(256*256*4*4),
+                        },
                    }, 
                ],
            ],
@@ -644,6 +681,7 @@ pub struct State {
     ray_march_compute_pipeline: wgpu::ComputePipeline,
     ray_renderer_bind_groups: Vec<wgpu::BindGroup>,
     ray_renderer_pipeline: wgpu::RenderPipeline,
+    ray_camera_uniform: gradu::RayCameraUniform,
 }
 
 
@@ -653,7 +691,7 @@ impl State {
 
     /// Initializes the project resources and returns the intance for State object. 
     pub async fn new(window: &Window) -> Self {
-
+        println!("sizeof ray_camera {}", std::mem::size_of::<RayCamera>() as u64);
         let example = Example::TwoTriangles;
 
         // Create the surface, adapter, device and the queue.
@@ -703,6 +741,7 @@ impl State {
             camera_controller.pitch.to_radians().cos() * camera_controller.yaw.to_radians().sin()
         ).normalize();
 
+
         let mut camera_uniform = CameraUniform::new();
         camera_uniform.update_view_proj(&camera);
 
@@ -716,17 +755,46 @@ impl State {
 
         // The ray camera.
         let mut ray_camera = RayCamera {
-            pos: (1.0, 1.0, 1.0).into(),
+            pos: (0.0, 1.0, 0.0).into(),
             view: Vector3::new(0.0, 0.0, -1.0).normalize(),
             up: cgmath::Vector3::unit_y(),
-            fov: (45.0,45.0).into(),
-            apertureRadius: 0.0, // this is only used in path tracing.
-            focalDistance: 1.0, // camera distance to the camera screen.
+            fov: (90.0,90.0).into(),
+            apertureRadius: 1.0, // this is only used in path tracing.
+            focalDistance: 2.0, // camera distance to the camera screen.
         };
 
-        let ray_camera_buffer = Buffer::create_buffer_from_data::<RayCamera>(
+        //ray_camera.view = Vector3::new(
+        //    camera_controller.pitch.to_radians().cos() * camera_controller.yaw.to_radians().cos(),
+        //    camera_controller.pitch.to_radians().sin(),
+        //    camera_controller.pitch.to_radians().cos() * camera_controller.yaw.to_radians().sin()
+        //);
+
+        ray_camera.view = Vector3::new(
+            0.0,
+            0.0,
+            -1.0,
+        );
+        ray_camera.up = Vector3::new(
+            0.0,
+            1.0,
+            0.0,
+        );
+
+        println!("ray_camera.view :: ({}, {}, {})", ray_camera.view.x, ray_camera.view.y, ray_camera.view.z);
+
+        ray_camera.view = ray_camera.view.normalize_to(1.0);
+
+        println!("normalized ray_camera.view :: ({}, {}, {})", ray_camera.view.x, ray_camera.view.y, ray_camera.view.z);
+
+        let mut ray_camera_uniform = RayCameraUniform::new(); 
+        ray_camera_uniform.update(&ray_camera);
+
+        
+        //ray_camera.view = ray_camera.view.normalize();
+
+        let ray_camera_buffer = Buffer::create_buffer_from_data::<RayCameraUniform>(
             &device,
-            &[ray_camera],
+            &[ray_camera_uniform],
             wgpu::BufferUsage::UNIFORM | wgpu::BufferUsage::COPY_DST,
             None);
 
@@ -739,7 +807,7 @@ impl State {
             camera_controller.pitch.to_radians().cos() * camera_controller.yaw.to_radians().cos(),
             camera_controller.pitch.to_radians().sin(),
             camera_controller.pitch.to_radians().cos() * camera_controller.yaw.to_radians().sin()
-        ).normalize();
+        ).normalize_to(1.0);
 
         let mut camera_uniform = CameraUniform::new();
         camera_uniform.update_view_proj(&camera);
@@ -889,7 +957,7 @@ impl State {
             for (e, bgs) in ray_march_bind_groups.iter().enumerate() {
                 ray_pass.set_bind_group(e as u32, &bgs, &[]);
             }
-            ray_pass.dispatch(1028,1,1);
+            ray_pass.dispatch(32,32,1);
         }
 
         //ray_encoder.copy_buffer_to_buffer(
@@ -936,11 +1004,23 @@ impl State {
         //    }
         //}
 
-        let k = &buffers.get(RAY_MARCH_OUTPUT_BUFFER).unwrap().to_vec::<u8>(&device, &queue, true).await;
-        for i in 0..256*256*4 {
+        //let k = &buffers.get(RAY_MARCH_OUTPUT_BUFFER).unwrap().to_vec::<u32>(&device, &queue, true).await;
+        //for i in 0..256*256 {
+        ////for i in 0..256*256*4 {
+        //    //if k[i] == 999999 { continue; } 
+        //    //if i % 256 == 0 { print!("("); }
+        //    //println!("{} :: {}", i, k[i]);
+        //    //println!("(i={}, x={},y={})", i, (k[i] & 0xffff0000) >> 16 , k[i] & 0xffff );
+        //    //if i % 256 == 0 { println!(")"); }
+        //}
+        
+        let debug_buffer = &buffers.get(RAY_DEBUG_BUFFER).unwrap().to_vec::<f32>(&device, &queue, true).await;
+        for i in 0..256*256 {
+            let offset = i*4;
+        //for i in 0..256*256*4 {
             //if k[i] == 999999 { continue; } 
             //if i % 256 == 0 { print!("("); }
-            println!("{} :: {}", i, k[i]);
+            println!("{} :: ({}, {}, {}, {})", i, debug_buffer[offset], debug_buffer[offset+1], debug_buffer[offset+2], debug_buffer[offset+3]);
             //println!("(i={}, x={},y={})", i, (k[i] & 0xffff0000) >> 16 , k[i] & 0xffff );
             //if i % 256 == 0 { println!(")"); }
         }
@@ -981,6 +1061,7 @@ impl State {
             ray_march_compute_pipeline,
             ray_renderer_bind_groups,
             ray_renderer_pipeline,
+            ray_camera_uniform,
         }
     } // new(...
 
@@ -1006,6 +1087,7 @@ impl State {
     pub fn update(&mut self) {
 
         self.camera_uniform.update_view_proj(&self.camera);
+        self.ray_camera_uniform.update(&self.ray_camera);
 
         // TODO: Create a method for this in Buffer.
         self.queue.write_buffer(
@@ -1017,7 +1099,7 @@ impl State {
         self.queue.write_buffer(
             &self.buffers.get(RAY_CAMERA_UNIFORM_BUFFER).unwrap().buffer,
             0,
-            bytemuck::cast_slice(&[self.ray_camera])
+            bytemuck::cast_slice(&[self.ray_camera_uniform])
         );
 
     }
@@ -1038,7 +1120,7 @@ impl State {
                         for (e, bgs) in self.ray_march_bind_groups.iter().enumerate() {
                             ray_pass.set_bind_group(e as u32, &bgs, &[]);
                         }
-                        ray_pass.dispatch(1028,1,1);
+                        ray_pass.dispatch(32,32,1);
                     }
 
                     encoder.copy_buffer_to_texture(
@@ -1358,6 +1440,18 @@ fn create_vertex_buffers(device: &wgpu::Device, buffers: &mut HashMap::<String, 
     );
 
     buffers.insert(RAY_MARCH_OUTPUT_BUFFER.to_string(), ray_march_output);
+    println!(" ... OK'");
+
+    print!("    * Creating ray march debug buffer as '{}'", RAY_DEBUG_BUFFER);
+
+    let ray_debug = Buffer::create_buffer_from_data::<f32>(
+        device,
+        &vec![0 as f32 ; 256*256*4],
+        wgpu::BufferUsage::STORAGE | wgpu::BufferUsage::COPY_DST | wgpu::BufferUsage::COPY_SRC,
+        None
+    );
+
+    buffers.insert(RAY_DEBUG_BUFFER.to_string(), ray_debug);
     println!(" ... OK'");
 
     println!("");
