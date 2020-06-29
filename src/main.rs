@@ -845,7 +845,7 @@ impl State {
         };
 
         // The camera controller.
-        let camera_controller = CameraController::new(2.0,0.2);
+        let camera_controller = CameraController::new(4.0,0.2);
 
         camera.view = Vector3::new(
             camera_controller.pitch.to_radians().cos() * camera_controller.yaw.to_radians().cos(),
