@@ -226,20 +226,33 @@ impl Texture {
         let width = info.width;
         let height = info.height;
         let bits_per_pixel = info.color_type.samples() as u32;
+
+        if !(bits_per_pixel == 3 || bits_per_pixel == 4) {
+            panic!("Bits per pixel must be 3 or 4. Bits per pixel == {}", bits_per_pixel); 
+        }
+
+        // println!("THE BITS PER PIXEL == {}", bits_per_pixel);
+        // println!("THE WIDTH == {}", width);
+        // println!("THE HEIGHT == {}", height);
+        // println!("{} * {} * {}  == {}", width, bits_per_pixel, height, width*bits_per_pixel*height);
+
         let mut buffer = vec![0; (info.width * bits_per_pixel * info.height) as usize ];
         reader.next_frame(&mut buffer).unwrap(); //expect("Can't read next frame.");
 
-        // TODO: check if image is already in rgba.
-        // Add an alpha for data sequence.
-        // input rgb rgb rgb ... => output rgb(a=255) rgb(a=255) rgb(a=255)
+        // TODO: check the size of the image.
+
 
         let mut temp: Vec<u8> = Vec::new();
         let mut counter = 0; 
-        for i in 0..buffer.len() {
-            if counter == 2 { counter = 0; temp.push(buffer[i]); temp.push(255); }
-            else {
-                temp.push(buffer[i]);
-                counter = counter + 1;
+
+        // The png has only rgb components. Add the alpha component to each texel. 
+        if bits_per_pixel == 3 {
+            for i in 0..buffer.len() {
+                if counter == 2 { counter = 0; temp.push(buffer[i]); temp.push(255); }
+                else {
+                    temp.push(buffer[i]);
+                    counter = counter + 1;
+                }
             }
         }
 
@@ -251,7 +264,6 @@ impl Texture {
 
         let texture = device.create_texture(&wgpu::TextureDescriptor {
             size: texture_extent,
-            // array_layer_count: 1, // only one texture now
             mip_level_count: 1,
             sample_count: 1,
             dimension: wgpu::TextureDimension::D2,
@@ -266,11 +278,14 @@ impl Texture {
                 mip_level: 0,
                 origin: wgpu::Origin3d::ZERO,
             },
-            &temp,
+            match bits_per_pixel {
+                3 => &temp,
+                4 => &buffer,
+                _ => panic!("Bits size of {} is not supported", bits_per_pixel),
+            },
             wgpu::TextureDataLayout {
                 offset: 0,
-                bytes_per_row: height * 4, //bits_per_pixel * width ,
-                //bytes_per_row: bits_per_pixel * width ,
+                bytes_per_row: width * 4, // now only 4 bits per pixel is supported,
                 rows_per_image: height,
             },
             texture_extent,

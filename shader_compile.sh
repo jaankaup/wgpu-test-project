@@ -12,3 +12,5 @@
 ./spirv.sh src/mc_render_frag.spv src/mc_render.frag 
 
 ./spirv.sh src/ray.spv src/ray.comp 
+
+./spirv.sh src/sphere_tracer_comp.spv src/sphere_tracer.comp 

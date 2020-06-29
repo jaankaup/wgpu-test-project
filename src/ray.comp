@@ -13,6 +13,10 @@ layout(local_size_x = LOCAL_X_DIM, local_size_y = LOCAL_Y_DIM) in;
 struct Ray {
     vec3 origin;
     vec3 direction;
+    float rMin;
+    float rMax;
+    int maxStep;
+    float epsilon;
 };
 
 layout(set = 0, binding = 0) uniform RayCamera {
@@ -133,9 +137,9 @@ float fbm(vec3 x) {
 }
 
 float maasto(vec3 f_pos) {
-    float n = noise(0.05*f_pos);
-    return f_pos.y - 15.5 + 2 * sin(f_pos.x * 0.05) - 8 * n +
-    15 * sin(f_pos.z * 0.09);
+    float n = noise(vec3(0.02*f_pos.x, 0.02*f_pos.y, 0.02*f_pos.z));
+    float n2 = noise(vec3(0.08*f_pos.y, 0.08*f_pos.z, 0.08*f_pos.x));
+    return f_pos.y - 15.5 + 8 * n + 100 * n2;
 }
 
 // float calculate_density(vec3 v)
@@ -218,9 +222,36 @@ void main() {
 
     //if (depth > max_depth) break;
   } // for
+
+  // vec2 coord1 = intersection_point.xy;
+  // vec2 coord2 = intersection_point.zy;
+  // vec2 coord3 = intersection_point.zy;
+
+  // vec4 final_color1 = texture(sampler2D(t_diffuse, s_diffuse), coord1 * 0.051);
+  // vec4 final_color2 = texture(sampler2D(t_diffuse, s_diffuse), coord2 * 0.051);
+  // vec4 final_color3 = texture(sampler2D(t_diffuse, s_diffuse), coord3 * 0.051);
+
+  // vec4 final_color = mix(mix(final_color1, final_color2, 0.5), final_color3, 0.3);
+
   //vec4 final_color = texture(sampler2D(t_diffuse, s_diffuse), camera.view.xy) ; 
-  vec4 final_color = texture(sampler2D(t_diffuse, s_diffuse),
-  intersection_point.xz * 0.1 + 0.03 * intersection_point.yy) ; if (depth > 100.0) final_color = vec4(1.0,1.0,1.0,1.0); //vec4 final_color = vec4(depth * 0.1, 0.0, 0.0, 1.0);
+//  vec2 coord1 = intersection_point.xy * 0.05; // normal xy mapping to 2d texture.
+  float pah = noise(0.05*intersection_point.xy);
+  float pah2 = noise(vec2(2.55) + 0.05*intersection_point.xz);
+  float pah3 = noise(vec2(5.0) + 0.05*intersection_point.yz);
+//  float pah3 = noise(0.02*(intersection_point + vec3(8.0,8.0,8.0));
+//  float offset1 = 0.25*noise(intersection_point.x) + 0.25;
+//  float offset2 = 0.25*noise(intersection_point.y) + 0.25;
+//  float offset3 = 0.25*noise(intersection_point.z) + 0.25;
+//  //vec2 coord3 = vec2(intersection_point.z * 0.05, -intersection_point.z * 0.05);
+//  vec4 final_color = texture(sampler2D(t_diffuse, s_diffuse), 0.2*(intersection_point.xz - intersection_point.y * vec2(0.1,0.1)));
+//  vec4 color2 = texture(sampler2D(t_diffuse, s_diffuse), vec2(offset1,offset3));
+//  //vec4 color2 = texture(sampler2D(t_diffuse, s_diffuse), vec2(offset1, offset3));
+//  //vec4 final_color1 = texture(sampler2D(t_diffuse, s_diffuse), 0.01*intersection_point.xz);
+//  //vec4 final_color2 = texture(sampler2D(t_diffuse, s_diffuse), 0.05*intersection_point.xy);
+//
+//  //vec4 final_color = vec4(offset1, offset2, offset3, 1.0);
+
+  vec4 final_color = vec4(pah,pah2,pah3,1.0);
 
   //if (length(intersection_point - camera.position) > 500.0) final_color = vec4(0.0,0.0,0.0,1.0);
   //vec4 final_color = vec4(abs(camera.view.x), abs(camera.view.y), abs(camera.view.z), 1.0); //texture(sampler2D(t_diffuse, s_diffuse), intersection_point.xy) ;

@@ -1,0 +1,339 @@
+#version 450
+
+#define STEP_SIZE 2.0
+
+//__constant sampler_t sampler = CLK_NORMALIZED_COORDS_TRUE | CLK_ADDRESS_REPEAT | CLK_FILTER_LINEAR;
+
+#define LOCAL_X_DIM 8 
+#define LOCAL_Y_DIM 8
+
+layout(local_size_x = LOCAL_X_DIM, local_size_y = LOCAL_Y_DIM) in;
+
+struct RayOutput {
+    vec4 origin; // fourth element == visibility.
+    vec4 intersection_point; // fourt element == opacity.
+    vec4 normal; // fourth element == the diffuse color.
+};
+
+struct Ray {
+  vec3 origin;
+  vec3 direction;
+  float rMin;
+  float rMax;
+};
+
+struct RayPayload {
+  vec4 intersection_point;
+  vec4 normal;
+  float visibility;
+  float opacity;
+  uint color;
+};
+
+layout(set = 0, binding = 0) uniform RayCamera {
+    vec4 position;		
+    vec4 view;			
+    vec4 up;			
+    vec4 fov;		
+    float apertureRadius;
+    float focalDistance;
+} camera;
+
+layout(set = 1, binding = 0) uniform texture2D t_diffuse1; // grass
+layout(set = 1, binding = 1) uniform sampler s_diffuse1;
+layout(set = 1, binding = 2) uniform texture2D t_diffuse2; // rock
+layout(set = 1, binding = 3) uniform sampler s_diffuse2;
+
+layout(set = 2, binding = 0) writeonly buffer RayOutputBuffer {
+    RayOutput[] ray_output;
+};
+
+layout(set = 3, binding = 0) buffer Prkl {
+    uint[] frame_output;
+};
+
+
+/******************************************************************************************************************************/
+
+uint encode_color(vec4 color) {
+
+  return ((uint(color.w * 255) & 0xffff) << 24) | // alpha
+         ((uint(color.z * 255) & 0xffff) << 16) | // blue
+         ((uint(color.y * 255) & 0xffff) << 8 ) | // green
+         (uint(color.x * 255) & 0xffff);          // red 
+}
+
+/******************************************************************************************************************************/
+// Calculate the density value.
+float calculate_density(vec3 f_pos) {
+  return f_pos.y;
+}
+
+ /******************************************************************************************************************************/
+ 
+// Calculate the fog value.
+float fog(vec3 fogPos)
+{
+  return fogPos.x; // dummy value
+}
+
+/******************************************************************************************************************************/
+
+vec3 calculate_normal(vec3 pos)
+{
+  vec3 grad;
+
+  const float offset = 0.01f;
+  float right =   calculate_density(vec3(pos.x+offset, pos.y,pos.z));
+  float left =    calculate_density(vec3(pos.x-offset, pos.y,pos.z));
+  float up =      calculate_density(vec3(pos.x, pos.y+offset,pos.z));
+  float down =    calculate_density(vec3(pos.x, pos.y-offset,pos.z));
+  float z_minus = calculate_density(vec3(pos.x, pos.y,pos.z-offset));
+  float z = 	  calculate_density(vec3(pos.x, pos.y,pos.z+offset));
+  grad.x = right - left;
+  grad.y = up - down;
+  grad.z = z - z_minus;
+  return normalize(grad);
+}
+
+/******************************************************************************************************************************/
+
+// Calculate the normal and the sampled value.
+// Return a vector where vec4(normal_vector :: vec3, sampled_value :: float);
+vec4 calculate_normal2(vec3 pos) {
+  vec3 grad;
+
+  float sp = calculate_density(pos); // sp == sample
+
+  const float offset = 0.025f;
+  float right =   calculate_density(vec3(pos.x+offset, pos.y,pos.z));
+  float left =    calculate_density(vec3(pos.x-offset, pos.y,pos.z));
+  float up =      calculate_density(vec3(pos.x, pos.y+offset,pos.z));
+  float down =    calculate_density(vec3(pos.x, pos.y-offset,pos.z));
+  float z =       calculate_density(vec3(pos.x, pos.y,pos.z-offset));
+  float z_minus = calculate_density(vec3(pos.x, pos.y,pos.z+offset));
+
+  vec3 sample0 = vec3(left,down,z);
+  vec3 sample1 = vec3(right,up,z_minus);
+
+  vec3 scaledPosition = pos * offset - 0.5f;
+  vec3 fraction = scaledPosition - floor(scaledPosition);
+  vec3 correctionPolynomial = (fraction * (fraction - 1.0f)) * 0.5f;
+
+  sp += dot((sample0 - sp * 2.0f + sample1), correctionPolynomial);
+  return vec4(normalize(sample1 - sample0), sp);
+}
+
+/******************************************************************************************************************************/
+
+// Calculate the point in the Ray direction.
+vec3 getPoint(float parameter, in Ray ray)
+{
+  return ray.origin + parameter * ray.direction; 
+}
+
+/******************************************************************************************************************************/
+
+// If ray does not intersect anything (back groung color).
+void miss(in Ray ray, in RayPayload payload) {
+  //vec3 far_point = getPoint(ray.rMax,ray);
+  payload.color = encode_color(vec4(0.0,0.0,0.0,1.0)); // backgroun color in now black.
+}
+
+/******************************************************************************************************************************/
+
+// Calculate the phong-shading for the intersection point. Saves color and normal to the payload.
+void diffuse(in Ray ray, inout RayPayload payload) {
+  // TODO: do uniform.
+  const vec3 light_color = vec3(1.0f,1.0f,0.8f);
+  const float ambientCoeffience = 0.15f;
+  const float attentuationFactor = 0.00009f;
+  const float materialShininess = 170.0f;
+
+  const vec2 coord1 = payload.intersection_point.xy;
+  const vec2 coord2 = payload.intersection_point.xz;
+  const vec2 coord3 = payload.intersection_point.zz;
+
+  const vec3 surfaceColor_grass = texture(sampler2D(t_diffuse1, s_diffuse1), (coord1 + coord2 + coord3) / 3.0).xyz;
+  const vec3 surfaceColor_rock = texture(sampler2D(t_diffuse2, s_diffuse2), (0.1 *( coord1 + coord2 + coord3) / 3.0f)).xyz;
+
+  const vec3 surface_color = mix(surfaceColor_rock, surfaceColor_grass, clamp(0.4 * payload.normal.x + 0.6 * payload.normal.y, 0.0, 1.0)); 
+
+  const float distToLight = length(camera.position.xyz - payload.intersection_point.xyz);
+  const vec3 dirToLight = normalize(camera.position.xyz - payload.intersection_point.xyz);
+  const float diffuseCoeffient = max(0.0f,dot(payload.normal.xyz, dirToLight)); 
+  const vec3 incidenceVector = -dirToLight;
+  const vec3 reflectionVector = incidenceVector - 2.0 * dot(payload.normal.xyz, incidenceVector) * payload.normal.xyz;
+  const float cosAngle = max(0.0f, dot(ray.direction, reflectionVector));
+
+  float specularCoeffient = 0.0;
+  if (diffuseCoeffient > 0.0) specularCoeffient = pow(cosAngle, materialShininess);
+
+  vec3 specularComponent = specularCoeffient * surface_color * light_color;
+
+  vec3 ambient = ambientCoeffience * light_color * surface_color;
+  vec3 diffuseComponent = diffuseCoeffient * light_color * surface_color;
+  float attentuation = 1.0 / (1.0 + attentuationFactor * pow(distToLight,2.0));
+  payload.color = encode_color(
+  	vec4 (ambient + attentuation * (2.0f * (diffuseComponent + specularComponent)), 1.0)
+  );
+}
+
+/******************************************************************************************************************************/
+
+void shootShadowRay(in Ray ray, in RayPayload payload)
+{
+  float dist = ray.rMin;
+  vec3 p;
+  float value_calculate_density;
+
+   while (dist < ray.rMax) {
+     p = getPoint(dist, ray); 
+     value_calculate_density = calculate_density(p);
+     if (value_calculate_density < 0.0f) {
+       //payload.visibility = min(0.8f, payload.opacity);
+       return;
+     }
+     dist += 1.0f;
+   }
+}
+
+/******************************************************************************************************************************/
+
+void hit(in Ray ray, inout RayPayload payload) {
+
+
+  vec4 normal = calculate_normal2(payload.intersection_point.xyz);
+
+  // TODO: Add light_position to uniform.
+  vec3 light_position = camera.position.xyz;
+
+  // TODO: Handle shadow ray lates.
+  // Ray shadowRay;
+  // shadowRay.origin = getPoint(temp_distance - STEP_SIZE, ray);  
+  // shadowRay.direction = normalize(light_position - p); 
+  // shadowRay.rMin = 0.0f; 
+  // shadowRay.rMax = length(light_position - shadowRay.origin); 
+
+  // RayPayload shadowPayload;
+  // shadowPayload.visibility = 1.0f;
+  // shadowPayload.opacity = 0.9f*payload.opacity;
+  // 
+  // shootShadowRay(shadowRay, shadowPayload);
+
+  payload.normal = normal;
+
+  // Calculate color. Add the color and normal to the payload.
+  diffuse(ray, payload);
+  // payload.color.x = min(1.0f,color.x); // + light_opacity);
+  // payload.color.y = min(1.0f,color.y); // + light_opacity);
+  // payload.color.z = min(1.0f,color.z); // + light_opacity);
+  // payload.color.w = 1.0f; 
+// KESKEN
+}
+
+/******************************************************************************************************************************/
+
+// Trace a ray.  
+void traceRay(inout Ray ray, inout RayPayload payload) {
+  float dist = ray.rMin;
+  float maxi = ray.rMax;
+  vec3 p;
+  float value_calculate_density;
+  // float dist = 0.0;
+
+   while (dist < ray.rMax) { 
+     p = getPoint(dist, ray); 
+     value_calculate_density = calculate_density(p);
+     if (value_calculate_density < 0.0) {
+
+	// Check for more detailed intersection point.
+        // TODO: is this necessery?
+
+	// Step backward the ray.
+  	float temp_distance = dist - STEP_SIZE;
+  	float value;
+  	vec3 p; 
+
+	// Calculate more accurate intersection point.
+  	while (temp_distance < dist) {
+  	  p = getPoint(temp_distance, ray); 
+  	  value = calculate_density(p);
+  	  if (value < 0.0) break;
+  	  temp_distance += 0.1;
+  	}
+	
+	// Jump back a litte.
+	temp_distance -= 0.1;
+
+	// Save intersection point.
+	payload.intersection_point = vec4(getPoint(temp_distance, ray) , 1.0);
+
+	// Calculate normal and the actual value. payload.normal == vec3(normal, value);
+        payload.normal = calculate_normal2(payload.intersection_point.xyz);
+
+       // Calculate the color and the normal for intersection.
+       payload.intersection_point = vec4(p, 1.0); // TODO: check the final point here.
+       hit(ray,payload);
+       return;
+     }
+     dist += STEP_SIZE;
+   }
+   payload.intersection_point = vec4(p, 1.0); // TODO: check the final point here.
+   miss(ray,payload);
+}
+
+/******************************************************************************************************************************/
+
+
+void main () {
+
+  float x_coord = float(gl_GlobalInvocationID.x);
+  float y_coord = float(gl_GlobalInvocationID.y);
+  float global_x_dim = float(gl_NumWorkGroups.x * LOCAL_X_DIM);
+  float global_y_dim = float(gl_NumWorkGroups.y * LOCAL_Y_DIM);
+
+  vec3 right = normalize(cross(camera.view.xyz,camera.up.xyz));  
+  vec3 y = normalize(cross(camera.view.xyz, right));
+
+  float d = camera.focalDistance;  
+  
+  vec3 u = (d * tan(camera.fov.x*0.5)) * right; 
+  vec3 v = (d * tan(camera.fov.y*0.5)) * y;
+
+  float alpha = 2.0 * (x_coord + 0.5f) / global_x_dim - 1.0;
+  float beta  = 1.0 - 2.0f * (y_coord + 0.5f) / global_y_dim;
+
+  vec3 point_on_plane = alpha * u + beta * v;
+
+  Ray ray;
+  ray.origin = point_on_plane + camera.position.xyz;
+  ray.direction = normalize(point_on_plane + d*camera.view.xyz);
+  ray.rMin = 0.0f;
+  ray.rMax = 600.0f;
+  
+  RayPayload payload;
+  payload.color = encode_color(vec4(1.0f,0.0f,0.0f,1.0f));
+
+  traceRay(ray, payload); 
+
+  RayOutput result;
+  result.origin = vec4(ray.origin, 1.0);
+  result.intersection_point = payload.intersection_point; 
+  result.normal = payload.normal;
+
+// struct RayOutput {
+//     vec4 origin; // fourth element == visibility.
+//     vec4 intersection_point; // fourt element == opacity.
+//     vec4 normal; // fourth element == the diffuse color.
+// };
+
+  ray_output[gl_GlobalInvocationID.x + gl_NumWorkGroups.x * gl_WorkGroupSize.x * gl_GlobalInvocationID.y] = result;
+  frame_output[gl_GlobalInvocationID.x + gl_NumWorkGroups.x * gl_WorkGroupSize.x * gl_GlobalInvocationID.y] = payload.color;
+  //frame_output[gl_GlobalInvocationID.x + gl_NumWorkGroups.x * gl_WorkGroupSize.x * gl_GlobalInvocationID.y] = converted_color_rgba;
+
+  // debug_output[gl_GlobalInvocationID.x + gl_NumWorkGroups.x *
+  // gl_WorkGroupSize.x * gl_GlobalInvocationID.y] = vec4(camera.apertureRadius,
+  // camera.focalDistance, 12.0, 13.0 );
+
+}
