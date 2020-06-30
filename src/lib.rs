@@ -154,6 +154,9 @@ pub struct Texture {
     pub texture: wgpu::Texture,
     pub view: wgpu::TextureView,
     pub sampler: wgpu::Sampler,
+    width: u32,
+    height: u32,
+    depth: u32,
 }
 
 impl Texture {
@@ -162,10 +165,15 @@ impl Texture {
     //pub const IMAGE_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba8Unorm;
 
     pub fn create_depth_texture(device: &wgpu::Device, sc_desc: &wgpu::SwapChainDescriptor, label: Option<&str>) -> Self {
+
+        let width = sc_desc.width; 
+        let height = sc_desc.height; 
+        let depth = 1; 
+
         let size = wgpu::Extent3d {
-            width: sc_desc.width,
-            height: sc_desc.height,
-            depth: 1,
+            width: width,
+            height: height,
+            depth: depth,
         };
         let desc = wgpu::TextureDescriptor {
             label: label,
@@ -198,7 +206,7 @@ impl Texture {
 
         let texture_type = TextureType::Depth;
 
-        Self { texture_type, texture, view, sampler }
+        Self { texture_type, texture, view, sampler, width, height, depth }
     }
 
     /// Creates a texture from a sequency of bytes (expects bytes to be in png format in rgb). Now
@@ -304,12 +312,19 @@ impl Texture {
 
         let texture_type = TextureType::Diffuse;
 
+        let width = texture_extent.width;
+        let height = texture_extent.height;
+        let depth = texture_extent.depth;
+
         Self {
 
             texture_type, 
             texture,
             view,
             sampler,
+            width,
+            height,
+            depth,
         }
     }
 
@@ -358,13 +373,129 @@ impl Texture {
 
         let texture_type = TextureType::Diffuse;
 
+        let depth = 1;
+
         Self {
 
             texture_type, 
             texture,
             view,
             sampler,
+            width,
+            height,
+            depth, 
         }
+    }
+
+    pub fn create_texture3D(queue: &wgpu::Queue, device: &wgpu::Device, width: u32, height: u32, depth: u32) -> Self {
+
+        let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
+            address_mode_u: wgpu::AddressMode::ClampToEdge,
+            address_mode_v: wgpu::AddressMode::ClampToEdge,
+            address_mode_w: wgpu::AddressMode::ClampToEdge,
+            mag_filter: wgpu::FilterMode::Linear,
+            min_filter: wgpu::FilterMode::Nearest,
+            mipmap_filter: wgpu::FilterMode::Nearest,
+            lod_min_clamp: -100.0,
+            lod_max_clamp: 100.0,
+            compare: Some(wgpu::CompareFunction::Always),
+            ..Default::default()
+        });
+
+        let texture_extent = wgpu::Extent3d {
+            width: width,
+            height: height,
+            depth: depth,
+        };
+
+        let texture = device.create_texture(&wgpu::TextureDescriptor {
+            size: texture_extent,
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D3,
+            format: wgpu::TextureFormat::Rgba8UnormSrgb,
+            usage: wgpu::TextureUsage::SAMPLED | wgpu::TextureUsage::COPY_DST | wgpu::TextureUsage::STORAGE | wgpu::TextureUsage::COPY_SRC,
+            label: None,
+        });
+
+        let view = texture.create_view(&wgpu::TextureViewDescriptor {
+            label: None,
+            format: wgpu::TextureFormat::Rgba8UnormSrgb,
+            dimension: wgpu::TextureViewDimension::D3,
+            aspect: wgpu::TextureAspect::default(),
+            base_mip_level: 0,
+            level_count: 1,
+            base_array_layer: 0,
+            array_layer_count: 1,
+        });
+
+        let texture_type = TextureType::Diffuse;
+
+        Self {
+
+            texture_type, 
+            texture,
+            view,
+            sampler,
+            width,
+            height,
+            depth,
+        }
+    }
+
+    pub async fn to_vec<T: Convert2Vec>(&self, device: &wgpu::Device, queue: &wgpu::Queue) -> Vec<T> {
+
+        let size = (self.width * self.height * self.depth * 4) as u64;
+        
+        // println!("self.width == {} * self.height == {} * self.depth == {} * 4 == {}",
+        //    self.width,
+        //    self.height,
+        //    self.depth,
+        //    (self.width * self.height * self.depth * 4) as u64
+        //);
+
+
+        let staging_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: None,
+            size: size, 
+            usage: wgpu::BufferUsage::MAP_READ | wgpu::BufferUsage::COPY_DST,
+            mapped_at_creation: false,
+        });
+
+        let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
+
+        encoder.copy_texture_to_buffer(
+            wgpu::TextureCopyView {
+                texture: &self.texture,
+                mip_level: 0,
+                origin: wgpu::Origin3d::ZERO,
+            },
+            wgpu::BufferCopyView {
+                buffer: &staging_buffer,
+                layout: wgpu::TextureDataLayout {
+                    offset: 0,
+                    bytes_per_row: self.width * 4, 
+                    rows_per_image: self.depth,
+                },
+            },
+            wgpu::Extent3d {
+                width: self.width,
+                height: self.height,
+                depth: self.depth,
+            },
+        );
+        queue.submit(Some(encoder.finish()));
+
+        let buffer_slice = staging_buffer.slice(..);
+        let buffer_future = buffer_slice.map_async(wgpu::MapMode::Read);
+        device.poll(wgpu::Maintain::Wait);
+
+        let res: Vec<T>;
+
+        buffer_future.await.expect("failed"); 
+        let data = buffer_slice.get_mapped_range();
+        res = Convert2Vec::convert(&data);
+        res
     }
 
     /// Creates the tritable texture for marching cubes.
@@ -657,10 +788,14 @@ impl Texture {
             }
         }
 
+        let width = 1280;
+        let height = 1;
+        let depth = 1;
+
         let texture_extent = wgpu::Extent3d {
-            width: 1280,
-            height: 1,
-            depth: 1,
+            width: width,
+            height: height,
+            depth: depth,
         };
 
         let texture = device.create_texture(&wgpu::TextureDescriptor {
@@ -709,6 +844,9 @@ impl Texture {
             texture,
             view,
             sampler,
+            width,
+            height,
+            depth,
         }
     }
 }

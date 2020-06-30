@@ -14,3 +14,7 @@
 ./spirv.sh src/ray.spv src/ray.comp 
 
 ./spirv.sh src/sphere_tracer_comp.spv src/sphere_tracer.comp 
+
+./spirv.sh src/generate_noise3d_comp.spv src/generate_noise3d.comp 
+
+# ./spirv.sh src/noise2_comp.spv src/noise2.comp 

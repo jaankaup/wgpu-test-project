@@ -12,6 +12,7 @@ layout(set=0, binding=0) uniform camerauniform {
 };
 
 layout(set = 1, binding = 0) uniform texture2D t_diffuse;
+//layout(set = 1, binding = 0, r32f) uniform image2D t_diffuse;
 layout(set = 1, binding = 1) uniform sampler s_diffuse;
 
 const vec3 light_pos = vec3(3.0, 3.0, 3.0);

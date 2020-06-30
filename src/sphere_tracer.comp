@@ -35,7 +35,7 @@ layout(set = 0, binding = 0) uniform RayCamera {
     vec4 view;			
     vec4 up;			
     vec4 fov;		
-    float apertureRadius;
+    float apertureRadius; // Temporarly aperture radius is working as isovalue.
     float focalDistance;
 } camera;
 
@@ -43,6 +43,9 @@ layout(set = 1, binding = 0) uniform texture2D t_diffuse1; // grass
 layout(set = 1, binding = 1) uniform sampler s_diffuse1;
 layout(set = 1, binding = 2) uniform texture2D t_diffuse2; // rock
 layout(set = 1, binding = 3) uniform sampler s_diffuse2;
+layout(set = 1, binding = 4) uniform texture3D t_diffuse3;
+layout(set = 1, binding = 5) uniform sampler3D s_diffuse3;
+//layout(set = 1, binding = 5) uniform sampler s_diffuse3;
 
 layout(set = 2, binding = 0) writeonly buffer RayOutputBuffer {
     RayOutput[] ray_output;
@@ -161,9 +164,10 @@ uint encode_color(vec4 color) {
 /******************************************************************************************************************************/
 // Calculate the density value.
 float calculate_density(vec3 f_pos) {
-  float n = noise(f_pos * 0.1);
-  float n2 = fbm(f_pos * 0.01);
-  return f_pos.y + 5*n + 180*n2; 
+  //vec4 n = imageLoad(myStorageImage, ivec3(clamp(f_pos.x, 0, 255),clamp(f_pos.y,0,255),clamp(f_pos.z, 0, 255))); //f_pos);
+  //vec4 n = texture(sampler3D(t_diffuse3, s_diffuse3), f_pos*0.1);
+  vec4 n = texture(s_diffuse3, f_pos*0.001) * 2 - vec4(1.0, 1.0, 1.0, 1.0);
+  return f_pos.y + 15*n.y - 38 * n.z + 5 * n.w + n.x*10 ; 
 }
 
  /******************************************************************************************************************************/
@@ -271,9 +275,9 @@ void diffuse(in Ray ray, inout RayPayload payload) {
   const float attentuationFactor = 0.00009f;
   const float materialShininess = 170.0f;
 
-  const vec2 coord1 = payload.intersection_point.xy;
-  const vec2 coord2 = payload.intersection_point.xz;
-  const vec2 coord3 = payload.intersection_point.zz;
+  const vec2 coord1 = payload.intersection_point.xy*0.1;
+  const vec2 coord2 = payload.intersection_point.xz*0.1;
+  const vec2 coord3 = payload.intersection_point.zz*0.1;
 
   const vec3 surfaceColor_grass = texture(sampler2D(t_diffuse1, s_diffuse1), (coord1 + coord2 + coord3) / 3.0).xyz;
   const vec3 surfaceColor_rock = texture(sampler2D(t_diffuse2, s_diffuse2), (0.1 *( coord1 + coord2 + coord3) / 3.0f)).xyz;
@@ -449,7 +453,7 @@ void main () {
 //     vec4 normal; // fourth element == the diffuse color.
 // };
 
-  ray_output[gl_GlobalInvocationID.x + gl_NumWorkGroups.x * gl_WorkGroupSize.x * gl_GlobalInvocationID.y] = result;
+//  ray_output[gl_GlobalInvocationID.x + gl_NumWorkGroups.x * gl_WorkGroupSize.x * gl_GlobalInvocationID.y] = result;
   frame_output[gl_GlobalInvocationID.x + gl_NumWorkGroups.x * gl_WorkGroupSize.x * gl_GlobalInvocationID.y] = payload.color;
   //frame_output[gl_GlobalInvocationID.x + gl_NumWorkGroups.x * gl_WorkGroupSize.x * gl_GlobalInvocationID.y] = converted_color_rgba;
 
