@@ -1,0 +1,51 @@
+#version 450
+
+#define LOCAL_X_DIM 8 
+#define LOCAL_Y_DIM 8
+#define LOCAL_Z_DIM 8
+
+layout(local_size_x = LOCAL_X_DIM, local_size_y = LOCAL_Y_DIM, local_size_z = LOCAL_Z_DIM) in;
+
+//                           X4 O4
+//                           /\
+//                          /  \\
+//                         /    \ \
+//                        /      \ \
+//                       /        \  \
+//                      /          \  \
+//                     /            \   \
+//                    /              \   \
+//                   /                \    \
+//                  /                  \    \   1100
+//                 /                    \     \
+//                /                      \     \
+//     1101      /                        \     \
+//              /               ^          \     \
+//             /                .           \     \
+//            /                 |            \     \
+//           /                  .             \     \
+//          /                   | 1010         \     \
+//         /                    .               \     \
+//        /                     |                \     O  X3 O3
+//       /                      .               . \    |
+//      /                       |     ,            \   |
+//     /         0101      ,                        \  | 0110 
+//    /          .              O X5 O5              \ |      
+//   / .                                              \|       
+//   +-------------------------------------------------+
+// X1 O1                    0011                         X2 O2
+                                                                         
+                                                                         
+// E1,2 = 0011
+// E1,3 = 0101
+// E1,4 = 1001
+// E2,3 = 0110
+// E2,4 = 1010
+// E3,4 = 1100
+
+// E5,4 wave propagation direction that intersects with the triangle t 1,2,3 at X5.
+                                                                         
+
+void main() {
+
+}
