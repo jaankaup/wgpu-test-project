@@ -8,7 +8,7 @@ This project implements the following features/algorithms.
 
 	The Marching Cubes algorithm (implemented but not optimized).
 	A volumetric ray caster.
-        A sphere tracer (also known as ray marcher). Not implemented yet.
+	A sphere tracer (also known as ray marcher). Not implemented yet.
 	Fast Iterative Marching. Not implemented yet.
 
 ## usage
@@ -22,7 +22,7 @@ Shortkeys
 * `w` Move forward.
 * `s` Move backward.
 * `c` Move down.
-* `spacebar' Move up.
+* `spacebar` Move up.
 * `Key1` Two triangles.
 * `Key2` Textured cube.
 * `Key3` Marching cubes.
