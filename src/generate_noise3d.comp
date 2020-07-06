@@ -1,8 +1,10 @@
 #version 450
 
 //layout(set=0, binding=0, r32f) uniform writeonly image3D myStorageImage;
+
 layout(set = 0, binding = 0) buffer NoiseOut {
     uint[] noise_output;
+    //vec4[] noise_output;
 };
 
 layout(local_size_x = 4, local_size_y = 4, local_size_z = 4) in;
@@ -69,6 +71,100 @@ float gen_noise(vec3 p){
 
     return o4.y * d.y + o4.x * (1.0 - d.y);
 }
+
+//	<https://www.shadertoy.com/view/4dS3Wd>
+//	By Morgan McGuire @morgan3d, http://graphicscodex.com
+//
+float hash(float n) { return fract(sin(n) * 1e4); }
+float hash(vec2 p) { return fract(1e4 * sin(17.0 * p.x + p.y * 0.1) * (0.1 + abs(sin(p.y * 13.0 + p.x)))); }
+
+float noise(float x) {
+	float i = floor(x);
+	float f = fract(x);
+	float u = f * f * (3.0 - 2.0 * f);
+	return mix(hash(i), hash(i + 1.0), u);
+}
+
+float noise(vec2 x) {
+	vec2 i = floor(x);
+	vec2 f = fract(x);
+
+	// Four corners in 2D of a tile
+	float a = hash(i);
+	float b = hash(i + vec2(1.0, 0.0));
+	float c = hash(i + vec2(0.0, 1.0));
+	float d = hash(i + vec2(1.0, 1.0));
+
+	// Simple 2D lerp using smoothstep envelope between the values.
+	// return vec3(mix(mix(a, b, smoothstep(0.0, 1.0, f.x)),
+	//			mix(c, d, smoothstep(0.0, 1.0, f.x)),
+	//			smoothstep(0.0, 1.0, f.y)));
+
+	// Same code, with the clamps in smoothstep and common subexpressions
+	// optimized away.
+	vec2 u = f * f * (3.0 - 2.0 * f);
+	return mix(a, b, u.x) + (c - a) * u.y * (1.0 - u.x) + (d - b) * u.x * u.y;
+}
+
+// This one has non-ideal tiling properties that I'm still tuning
+float noise(vec3 x) {
+	const vec3 step = vec3(110, 241, 171);
+
+	vec3 i = floor(x);
+	vec3 f = fract(x);
+
+	// For performance, compute the base input to a 1D hash from the integer part of the argument and the
+	// incremental change to the 1D based on the 3D -> 1D wrapping
+    float n = dot(i, step);
+
+	vec3 u = f * f * (3.0 - 2.0 * f);
+	return mix(mix(mix( hash(n + dot(step, vec3(0, 0, 0))), hash(n + dot(step, vec3(1, 0, 0))), u.x),
+                   mix( hash(n + dot(step, vec3(0, 1, 0))), hash(n + dot(step, vec3(1, 1, 0))), u.x), u.y),
+               mix(mix( hash(n + dot(step, vec3(0, 0, 1))), hash(n + dot(step, vec3(1, 0, 1))), u.x),
+                   mix( hash(n + dot(step, vec3(0, 1, 1))), hash(n + dot(step, vec3(1, 1, 1))), u.x), u.y), u.z);
+}
+
+#define NUM_OCTAVES 5
+
+float fbm(float x) {
+	float v = 0.0;
+	float a = 0.5;
+	float shift = float(100);
+	for (int i = 0; i < NUM_OCTAVES; ++i) {
+		v += a * noise(x);
+		x = x * 2.0 + shift;
+		a *= 0.5;
+	}
+	return v;
+}
+
+float fbm(vec2 x) {
+	float v = 0.0;
+	float a = 0.5;
+	vec2 shift = vec2(100);
+	// Rotate to reduce axial bias
+    mat2 rot = mat2(cos(0.5), sin(0.5), -sin(0.5), cos(0.50));
+	for (int i = 0; i < NUM_OCTAVES; ++i) {
+		v += a * noise(x);
+		x = rot * x * 2.0 + shift;
+		a *= 0.5;
+	}
+	return v;
+}
+
+
+float fbm(vec3 x) {
+	float v = 0.0;
+	float a = 0.5;
+	vec3 shift = vec3(100);
+	for (int i = 0; i < NUM_OCTAVES; ++i) {
+		v += a * noise(x);
+		x = x * 2.0 + shift;
+		a *= 0.5;
+	}
+	return v;
+}
+
 
 /////////   CLASSIC PERLIN   //////////////////////
 
@@ -566,7 +662,7 @@ bool  multiply_by_F1	= mod(t,8.0)  >= 4.0;
 bool  inverse				= mod(t,16.0) >= 8.0;
 float distance_type	= mod(t/16.0,4.0);
 
-vec2 hash( vec2 p ){
+vec2 hash_b( vec2 p ){
 	p = vec2( dot(p,vec2(127.1,311.7)),dot(p,vec2(269.5,183.3)));
 	return fract(sin(p)*43758.5453);
 }
@@ -581,7 +677,7 @@ float voronoi( in vec2 x ){
 	for( int j=-1; j<=1; j++ )
 		for( int i=-1; i<=1; i++ ){
 			vec2 g = vec2(i,j);
-			vec2 o = hash( n + g );
+			vec2 o = hash_b( n + g );
 
 			o = 0.5 + 0.41*sin( time + 6.2831*o );
 			vec2 r = g - f + o;
@@ -612,7 +708,7 @@ float voronoi( in vec2 x ){
     return c;
 }
 
-float fbm( in vec2 p ){
+float fbm_b( in vec2 p ){
 	float s = 0.0;
 	float m = 0.0;
 	float a = 0.5;
@@ -704,27 +800,33 @@ void main() {
     const uint y = gl_GlobalInvocationID.y;
     const uint z = gl_GlobalInvocationID.z;
 
-    const float fx = float(x)*0.5;
-    const float fy = float(y)*0.5;
-    const float fz = float(z)*0.5;
+    const float fx = float(x) * 0.2;
+    const float fy = float(y) * 0.2;
+    const float fz = float(z) * 0.2;
 
     //uint output_index = gl_GlobalInvocationID.x +
     //                    gl_NumWorkGroups.x * gl_WorkGroupSize.x * gl_GlobalInvocationID.y + 
     //                    gl_NumWorkGroups.x * gl_WorkGroupSize.x * gl_GlobalInvocationID.y + 
 	
     float cperlin_noise = cnoise(vec4(fx, fy, fz, 1.0));
-    float fbm_noise = fbm2(vec3(fx, fy, fz));
-    float voronoi_noise = fbm2(vec2(fx, fy));
-    float voronoi_noise2 = fbm2(vec2(fx, fz));
+    float cperlin_noise2 = cnoise(vec4(fx*0.5 + 2.0f, fy*0.5 - 2.0f, -fz*0.5, 1.0));
+    float cperlin_noise3 = cnoise(vec4(fx*0.1 + 50.0f, fy*0.1 + 50.0f, fz*0.1 + 50.0f, 1.0));
+    float cperlin_noise4 = cnoise(vec4(-fx, -fy + 33.0f, -fz, 1.0));
+    //float fbm_noise = fbm2(vec3(fx, fy, fz));
+    //float voronoi_noise = voronoi(vec2(fx, fy) + vec2(fz, fz));
+    //float voronoi_noise2 = fbm2(vec3(fx, fy, fz));
     //imageStore(myStorageImage, ivec3(x,y,z), vec4(cperlin_noise, fbm_noise, voronoi_noise, voronoi_noise2)); 
 //    imageStore(myStorageImage, ivec3(x,y,z), vec4(fx/256.0, fy/256, fz/256, 1.0)); 
   
   uint output_index =
-    (gl_GlobalInvocationID.x - 1) +
-    gl_NumWorkGroups.x * gl_WorkGroupSize.x * (gl_GlobalInvocationID.y - 1) + 
-    gl_NumWorkGroups.x * gl_WorkGroupSize.x * gl_NumWorkGroups.y * gl_WorkGroupSize.y * (gl_GlobalInvocationID.z - 1);
+    (gl_GlobalInvocationID.x ) +
+    gl_NumWorkGroups.x * gl_WorkGroupSize.x * (gl_GlobalInvocationID.y) + 
+    gl_NumWorkGroups.x * gl_WorkGroupSize.x * gl_NumWorkGroups.y * gl_WorkGroupSize.y * (gl_GlobalInvocationID.z);
 
   //noise_output[output_index] = encode_vector(vec4(fx/256.0, fy/256, fz/256, 1.0));
   //noise_output[1] = gl_GlobalInvocationID.x; // encode_vector(vec4(fx/256.0, fy/256, fz/256, 1.0));
-  noise_output[output_index] = encode_vector(vec4(cperlin_noise, fbm_noise, voronoi_noise, voronoi_noise2));
+
+  noise_output[output_index] = encode_vector(vec4(cperlin_noise, cperlin_noise2, cperlin_noise3, cperlin_noise4));
+  //noise_output[output_index] = encode_vector(vec4(cperlin_noise, fbm_noise, voronoi_noise, voronoi_noise2));
+  //noise_output[output_index] = vec4(cperlin_noise, fbm_noise, voronoi_noise, voronoi_noise2);
 }

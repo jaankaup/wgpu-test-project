@@ -113,7 +113,7 @@ static ROCK_TEXTURE: TextureInfo = TextureInfo {
     depth: None,
 };
 
-static NOISE3D_DIMENSION: (u64, u64, u64) = (64,64,64);
+static NOISE3D_DIMENSION: (u64, u64, u64) = (128,128,128);
 
 static NOISE3DTEXTURE: TextureInfo = TextureInfo {
     name: "noise_3d_texture",  
@@ -124,6 +124,7 @@ static NOISE3DTEXTURE: TextureInfo = TextureInfo {
 };
 
 static NOISE_OUTPUT_BUFFER : &'static str = "noise_buffer";
+//static NOISE_OUTPUT_BUFFER_SIZE: u64 = NOISE3D_DIMENSION.0 * NOISE3D_DIMENSION.1 * NOISE3D_DIMENSION.2 * 16;
 static NOISE_OUTPUT_BUFFER_SIZE: u64 = NOISE3D_DIMENSION.0 * NOISE3D_DIMENSION.1 * NOISE3D_DIMENSION.2 * 4;
 
 static TWO_TRIANGLES_INPUT_FORMATS: [(wgpu::VertexFormat, u64); 2]  = [
@@ -170,7 +171,11 @@ static GENERATE_3D_SHADER: ShaderModuleInfo  = ShaderModuleInfo {
            stage: "compute",
 };
 
-fn create_two_triangles_info() -> RenderPipelineInfo { 
+fn multisampled(sample_count: u32) -> bool {
+    match sample_count { 1 => false, 2 => true, 4 => true, 8 => true, 16 => true, _ => panic!("Illegal sample count {}.", sample_count) }
+}
+
+fn create_two_triangles_info(sample_count: u32) -> RenderPipelineInfo { 
     let two_triangles_info: RenderPipelineInfo = RenderPipelineInfo {
         vertex_shader: ShaderModuleInfo {
             name: "two_triangles_vert",
@@ -189,7 +194,7 @@ fn create_two_triangles_info() -> RenderPipelineInfo {
                         visibility: wgpu::ShaderStage::FRAGMENT,
                         resource: Resource::TextureView(TWO_TRIANGLES_TEXTURE.name),
                         binding_type: wgpu::BindingType::SampledTexture {
-                           multisampled: false,
+                           multisampled: multisampled(sample_count),
                            component_type: wgpu::TextureComponentType::Float,
                            dimension: wgpu::TextureViewDimension::D2,
                         },
@@ -213,7 +218,7 @@ fn create_two_triangles_info() -> RenderPipelineInfo {
     two_triangles_info
 }
 
-fn vtn_renderer_info() -> RenderPipelineInfo { 
+fn vtn_renderer_info(sample_count: u32) -> RenderPipelineInfo { 
    let vtn_renderer_info: RenderPipelineInfo = RenderPipelineInfo {
        vertex_shader: ShaderModuleInfo {
            name: VTN_SHADERS[0].name,
@@ -244,7 +249,7 @@ fn vtn_renderer_info() -> RenderPipelineInfo {
                             visibility: wgpu::ShaderStage::FRAGMENT,
                             resource: Resource::TextureView(TWO_TRIANGLES_TEXTURE.name),
                             binding_type: wgpu::BindingType::SampledTexture {
-                               multisampled: false,
+                               multisampled: multisampled(sample_count),
                                component_type: wgpu::TextureComponentType::Float,
                                dimension: wgpu::TextureViewDimension::D2,
                             },
@@ -269,7 +274,7 @@ fn vtn_renderer_info() -> RenderPipelineInfo {
     vtn_renderer_info
 }
 
-fn ray_renderer_info() -> RenderPipelineInfo { 
+fn ray_renderer_info(sample_count: u32) -> RenderPipelineInfo { 
     let ray_renderer_info: RenderPipelineInfo = RenderPipelineInfo {
         vertex_shader: ShaderModuleInfo {
             name: "two_triangles_vert",
@@ -288,7 +293,7 @@ fn ray_renderer_info() -> RenderPipelineInfo {
                         visibility: wgpu::ShaderStage::FRAGMENT,
                         resource: Resource::TextureView(RAY_TEXTURE),
                         binding_type: wgpu::BindingType::SampledTexture {
-                           multisampled: false,
+                           multisampled: multisampled(sample_count),
                            component_type: wgpu::TextureComponentType::Uint,
                            //component_type: wgpu::TextureComponentType::Float,
                            dimension: wgpu::TextureViewDimension::D2,
@@ -313,7 +318,7 @@ fn ray_renderer_info() -> RenderPipelineInfo {
     ray_renderer_info
 }
 
-fn mc_renderer_info() -> RenderPipelineInfo { 
+fn mc_renderer_info(sample_count: u32) -> RenderPipelineInfo { 
    let mc_renderer_info: RenderPipelineInfo = RenderPipelineInfo {
        vertex_shader: ShaderModuleInfo {
            name: MC_RENDER_SHADERS[0].name,
@@ -344,7 +349,7 @@ fn mc_renderer_info() -> RenderPipelineInfo {
                             visibility: wgpu::ShaderStage::FRAGMENT,
                             resource: Resource::TextureView(TWO_TRIANGLES_TEXTURE.name),
                             binding_type: wgpu::BindingType::SampledTexture {
-                               multisampled: false,
+                               multisampled: multisampled(sample_count),
                                component_type: wgpu::TextureComponentType::Float,
                                dimension: wgpu::TextureViewDimension::D2,
                             },
@@ -414,7 +419,7 @@ fn marching_cubes_info() -> ComputePipelineInfo {
     marching_cubes_info
 }
 
-fn ray_march_info() -> ComputePipelineInfo {
+fn ray_march_info(sample_count: u32) -> ComputePipelineInfo {
    let ray_march_info: ComputePipelineInfo = ComputePipelineInfo {
        compute_shader: ShaderModuleInfo {
            name: RAY_MARCH_SHADER.name,
@@ -440,7 +445,7 @@ fn ray_march_info() -> ComputePipelineInfo {
                         visibility: wgpu::ShaderStage::COMPUTE,
                         resource: Resource::TextureView(TWO_TRIANGLES_TEXTURE.name),
                         binding_type: wgpu::BindingType::SampledTexture {
-                           multisampled: false,
+                           multisampled: multisampled(sample_count),
                            component_type: wgpu::TextureComponentType::Float,
                            dimension: wgpu::TextureViewDimension::D2,
                         },
@@ -450,7 +455,7 @@ fn ray_march_info() -> ComputePipelineInfo {
                         visibility: wgpu::ShaderStage::COMPUTE,
                         resource: Resource::TextureView(TWO_TRIANGLES_TEXTURE.name),
                         binding_type: wgpu::BindingType::SampledTexture {
-                           multisampled: false,
+                           multisampled: multisampled(sample_count),
                            component_type: wgpu::TextureComponentType::Float,
                            dimension: wgpu::TextureViewDimension::D2,
                         },
@@ -462,7 +467,7 @@ fn ray_march_info() -> ComputePipelineInfo {
                         visibility: wgpu::ShaderStage::COMPUTE,
                         resource: Resource::Buffer(RAY_MARCH_OUTPUT_BUFFER),
                         binding_type: wgpu::BindingType::StorageBuffer {
-                           dynamic: false,
+                           dynamic: false, //true,
                            readonly: false,
                            min_binding_size: wgpu::BufferSize::new(256*256*4),
                         },
@@ -474,7 +479,7 @@ fn ray_march_info() -> ComputePipelineInfo {
                         visibility: wgpu::ShaderStage::COMPUTE,
                         resource: Resource::Buffer(RAY_DEBUG_BUFFER),
                         binding_type: wgpu::BindingType::StorageBuffer {
-                           dynamic: false,
+                           dynamic: false, //true,
                            readonly: false,
                            min_binding_size: wgpu::BufferSize::new(256*256*4*4),
                         },
@@ -486,7 +491,7 @@ fn ray_march_info() -> ComputePipelineInfo {
     ray_march_info
 }
 
-fn sphere_tracer_info() -> ComputePipelineInfo {
+fn sphere_tracer_info(sample_count: u32) -> ComputePipelineInfo {
    let sphere_tracer_info: ComputePipelineInfo = ComputePipelineInfo {
        compute_shader: ShaderModuleInfo {
            name: SPHERE_TRACER_SHADER.name,
@@ -512,41 +517,57 @@ fn sphere_tracer_info() -> ComputePipelineInfo {
                         visibility: wgpu::ShaderStage::COMPUTE,
                         resource: Resource::TextureView(TWO_TRIANGLES_TEXTURE.name),
                         binding_type: wgpu::BindingType::SampledTexture {
-                           multisampled: false,
+                           multisampled: multisampled(sample_count),
                            component_type: wgpu::TextureComponentType::Float,
                            dimension: wgpu::TextureViewDimension::D2,
                         },
                    },
                    BindGroupInfo {
-                        binding: 1,
-                        visibility: wgpu::ShaderStage::COMPUTE,
-                        resource: Resource::TextureView(TWO_TRIANGLES_TEXTURE.name),
-                        binding_type: wgpu::BindingType::SampledTexture {
-                           multisampled: false,
-                           component_type: wgpu::TextureComponentType::Float,
-                           dimension: wgpu::TextureViewDimension::D2,
-                        },
+                       binding: 1,
+                       visibility: wgpu::ShaderStage::COMPUTE,
+                       resource: Resource::TextureSampler(TWO_TRIANGLES_TEXTURE.name),
+                       binding_type: wgpu::BindingType::Sampler {
+                          comparison: true,
+                       },
                    },
+                   //BindGroupInfo {
+                   //     binding: 1,
+                   //     visibility: wgpu::ShaderStage::COMPUTE,
+                   //     resource: Resource::TextureView(TWO_TRIANGLES_TEXTURE.name),
+                   //     binding_type: wgpu::BindingType::SampledTexture {
+                   //        multisampled: multisampled(sample_count),
+                   //        component_type: wgpu::TextureComponentType::Float,
+                   //        dimension: wgpu::TextureViewDimension::D2,
+                   //     },
+                   //},
                    BindGroupInfo {
                         binding: 2,
                         visibility: wgpu::ShaderStage::COMPUTE,
                         resource: Resource::TextureView(ROCK_TEXTURE.name),
                         binding_type: wgpu::BindingType::SampledTexture {
-                           multisampled: false,
+                           multisampled: multisampled(sample_count),
                            component_type: wgpu::TextureComponentType::Float,
                            dimension: wgpu::TextureViewDimension::D2,
                         },
                    },
                    BindGroupInfo {
-                        binding: 3,
-                        visibility: wgpu::ShaderStage::COMPUTE,
-                        resource: Resource::TextureView(ROCK_TEXTURE.name),
-                        binding_type: wgpu::BindingType::SampledTexture {
-                           multisampled: false,
-                           component_type: wgpu::TextureComponentType::Float,
-                           dimension: wgpu::TextureViewDimension::D2,
-                        },
+                       binding: 3,
+                       visibility: wgpu::ShaderStage::COMPUTE,
+                       resource: Resource::TextureSampler(ROCK_TEXTURE.name),
+                       binding_type: wgpu::BindingType::Sampler {
+                          comparison: true,
+                       },
                    },
+                   //BindGroupInfo {
+                   //     binding: 3,
+                   //     visibility: wgpu::ShaderStage::COMPUTE,
+                   //     resource: Resource::TextureView(ROCK_TEXTURE.name),
+                   //     binding_type: wgpu::BindingType::SampledTexture {
+                   //        multisampled: multisampled(sample_count),
+                   //        component_type: wgpu::TextureComponentType::Float,
+                   //        dimension: wgpu::TextureViewDimension::D2,
+                   //     },
+                   //},
                    BindGroupInfo {
                         binding: 4,
                         visibility: wgpu::ShaderStage::COMPUTE,
@@ -558,15 +579,23 @@ fn sphere_tracer_info() -> ComputePipelineInfo {
                         },
                    },
                    BindGroupInfo {
-                        binding: 5,
-                        visibility: wgpu::ShaderStage::COMPUTE,
-                        resource: Resource::TextureView(NOISE3DTEXTURE.name),
-                        binding_type: wgpu::BindingType::SampledTexture {
-                           multisampled: false,
-                           component_type: wgpu::TextureComponentType::Float,
-                           dimension: wgpu::TextureViewDimension::D3,
-                        },
+                       binding: 5,
+                       visibility: wgpu::ShaderStage::COMPUTE,
+                       resource: Resource::TextureSampler(NOISE3DTEXTURE.name),
+                       binding_type: wgpu::BindingType::Sampler {
+                          comparison: true,
+                       },
                    },
+                   //BindGroupInfo {
+                   //     binding: 5,
+                   //     visibility: wgpu::ShaderStage::COMPUTE,
+                   //     resource: Resource::TextureView(NOISE3DTEXTURE.name),
+                   //     binding_type: wgpu::BindingType::SampledTexture {
+                   //        multisampled: false,
+                   //        component_type: wgpu::TextureComponentType::Float,
+                   //        dimension: wgpu::TextureViewDimension::D3,
+                   //     },
+                   //},
                ],
                vec![
                    BindGroupInfo {
@@ -636,7 +665,8 @@ fn create_render_pipeline_and_bind_groups(device: &wgpu::Device,
                                    shaders: &HashMap<String, wgpu::ShaderModule>,
                                    textures: &HashMap<String, gradu::Texture>,
                                    buffers: &HashMap<String, gradu::Buffer>,
-                                   rpi: &RenderPipelineInfo)
+                                   rpi: &RenderPipelineInfo,
+                                   sample_count: u32)
     -> (Vec<wgpu::BindGroup>, wgpu::RenderPipeline) {
     
     print!("    * Creating bind groups ... ");
@@ -654,11 +684,17 @@ fn create_render_pipeline_and_bind_groups(device: &wgpu::Device,
                 x.binding_type.clone(),
               )).collect();
     
-        let texture_bind_group_layout =
+
            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
                bindings: &layout_entries,
                label: None,
         });
+
+        let texture_bind_group_layout =
+            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                bindings: &layout_entries,
+                label: None,
+            });
     
         let bindings: Vec<wgpu::Binding> 
             = b_group.into_iter().map(|x| wgpu::Binding {
@@ -734,17 +770,17 @@ fn create_render_pipeline_and_bind_groups(device: &wgpu::Device,
                 write_mask: wgpu::ColorWrite::ALL,
             },
         ],
-        //depth_stencil_state: None,
-        depth_stencil_state: Some(wgpu::DepthStencilStateDescriptor {
-            format: Texture::DEPTH_FORMAT,
-            depth_write_enabled: true,
-            depth_compare: wgpu::CompareFunction::Less,
-            stencil_front: wgpu::StencilStateFaceDescriptor::IGNORE,
-            stencil_back: wgpu::StencilStateFaceDescriptor::IGNORE,
-            stencil_read_mask: 0,
-            stencil_write_mask: 0,
-            //stencil_read_only: false,
-        }),
+        depth_stencil_state: None,
+        //depth_stencil_state: Some(wgpu::DepthStencilStateDescriptor {
+        //    format: Texture::DEPTH_FORMAT,
+        //    depth_write_enabled: true,
+        //    depth_compare: wgpu::CompareFunction::Less,
+        //    stencil_front: wgpu::StencilStateFaceDescriptor::IGNORE,
+        //    stencil_back: wgpu::StencilStateFaceDescriptor::IGNORE,
+        //    stencil_read_mask: 0,
+        //    stencil_write_mask: 0,
+        //    //stencil_read_only: false,
+        //}),
         vertex_state: wgpu::VertexStateDescriptor {
             index_format: wgpu::IndexFormat::Uint16,
             vertex_buffers: &[wgpu::VertexBufferDescriptor {
@@ -753,7 +789,7 @@ fn create_render_pipeline_and_bind_groups(device: &wgpu::Device,
                 attributes: &vertex_attributes,
             }],
         },
-        sample_count: 1,
+        sample_count: sample_count,
         sample_mask: !0,
         alpha_to_coverage_enabled: false,
       });
@@ -872,6 +908,8 @@ pub struct State {
     sphere_tracer_bind_groups: Vec<wgpu::BindGroup>,
     sphere_tracer_compute_pipeline: wgpu::ComputePipeline,
     time_counter: u128,
+    multisampled_framebuffer: wgpu::TextureView,
+    sample_count: u32,
 }
 
 use gradu::Texture;  
@@ -885,6 +923,7 @@ impl State {
         let time_counter = start
             .duration_since(UNIX_EPOCH)
             .expect("Could't get the time.").as_nanos();
+        let sample_count = 1;
                                                                                   
         let example = Example::TwoTriangles;
 
@@ -893,10 +932,13 @@ impl State {
 
         // Create the swap_chain_descriptor and swap_chain.
         let (sc_desc, swap_chain) = create_swap_chain(size, &surface, &device);
+
+        // Create framebuffer for multisampling.
+        let multisampled_framebuffer = create_multisampled_framebuffer(&device, &sc_desc, sample_count);
            
         // Storage for textures. It is important to load textures before creating bind groups.
         let mut textures = HashMap::new();
-        create_textures(&device, &queue, &sc_desc, &mut textures); 
+        create_textures(&device, &queue, &sc_desc, &mut textures, sample_count); 
 
         // Create shaders.
         let shaders = create_shaders(&device);
@@ -927,7 +969,7 @@ impl State {
         };
 
         // The camera controller.
-        let camera_controller = CameraController::new(4.0,0.2);
+        let camera_controller = CameraController::new(2.2,0.2);
 
         camera.view = Vector3::new(
             camera_controller.pitch.to_radians().cos() * camera_controller.yaw.to_radians().cos(),
@@ -981,7 +1023,7 @@ impl State {
 
         buffers.insert(RAY_CAMERA_UNIFORM_BUFFER.to_string(), ray_camera_buffer);
 
-        let two_triangles_info = create_two_triangles_info(); 
+        let two_triangles_info = create_two_triangles_info(sample_count); 
 
         println!("Creating two_triangles pipeline and bind groups.\n");
         let (two_triangles_bind_groups, two_triangles_render_pipeline) = create_render_pipeline_and_bind_groups(
@@ -990,9 +1032,10 @@ impl State {
                         &shaders,
                         &textures,
                         &buffers,
-                        &two_triangles_info);
+                        &two_triangles_info,
+                        sample_count);
 
-        let vtn_info = vtn_renderer_info();
+        let vtn_info = vtn_renderer_info(sample_count);
 
         println!("\nCreating vtn_render pipeline and bind groups.\n");
         let (vtn_bind_groups, vtn_render_pipeline) = create_render_pipeline_and_bind_groups(
@@ -1001,11 +1044,12 @@ impl State {
                         &shaders,
                         &textures,
                         &buffers,
-                        &vtn_info);
+                        &vtn_info,
+                        sample_count);
 
         println!("");
 
-        let ray_renderer_info = ray_renderer_info(); 
+        let ray_renderer_info = ray_renderer_info(sample_count); 
 
         println!("\nCreating ray renderer pipeline and bind groups.\n");
         let (ray_renderer_bind_groups, ray_renderer_pipeline) = create_render_pipeline_and_bind_groups(
@@ -1014,11 +1058,12 @@ impl State {
                         &shaders,
                         &textures,
                         &buffers,
-                        &ray_renderer_info);
+                        &ray_renderer_info,
+                        sample_count);
 
         println!("");
 
-        let mc_renderer_info = mc_renderer_info(); 
+        let mc_renderer_info = mc_renderer_info(sample_count); 
 
         println!("\nCreating mc_render pipeline and bind groups.\n");
         let (mc_render_bind_groups, mc_render_pipeline) = create_render_pipeline_and_bind_groups(
@@ -1027,7 +1072,8 @@ impl State {
                         &shaders,
                         &textures,
                         &buffers,
-                        &mc_renderer_info);
+                        &mc_renderer_info,
+                        sample_count);
 
         println!("");
 
@@ -1044,7 +1090,7 @@ impl State {
         println!("");
 
         println!("\nCreating ray_march pipeline and bind groups.\n");
-        let ray_march_info = ray_march_info();
+        let ray_march_info = ray_march_info(sample_count);
         let (ray_march_bind_groups, ray_march_compute_pipeline) = create_compute_pipeline_and_bind_groups(
                         &device,
                         &sc_desc,
@@ -1056,7 +1102,7 @@ impl State {
         println!("");
 
         println!("\nCreating scphere_marcher pipeline and bind groups.\n");
-        let sphere_tracer_info = sphere_tracer_info();
+        let sphere_tracer_info = sphere_tracer_info(sample_count);
         let (sphere_tracer_bind_groups, sphere_tracer_compute_pipeline) = create_compute_pipeline_and_bind_groups(
                         &device,
                         &sc_desc,
@@ -1088,7 +1134,7 @@ impl State {
             for (e, bgs) in noise3d_bind_groups.iter().enumerate() {
                 noise_pass.set_bind_group(e as u32, &bgs, &[]);
             }
-            noise_pass.dispatch(64,64,64);
+            noise_pass.dispatch(NOISE3D_DIMENSION.0 as u32 / 4, NOISE3D_DIMENSION.1 as u32 / 4, NOISE3D_DIMENSION.2 as u32 / 4); // TODOOOOO
         }
 
         let noise_texture_dimension_x = NOISE3DTEXTURE.width.expect("Consider giving NOISE3DTEXTURE a width.") as u32;
@@ -1100,7 +1146,7 @@ impl State {
                 buffer: &buffers.get(NOISE_OUTPUT_BUFFER).unwrap().buffer,
                 layout: wgpu::TextureDataLayout {
                     offset: 0,
-                    bytes_per_row: noise_texture_dimension_x * 4,
+                    bytes_per_row: noise_texture_dimension_x * 4, // 16 
                     rows_per_image: noise_texture_dimension_z,
                 },
             },
@@ -1117,26 +1163,26 @@ impl State {
 
         queue.submit(Some(noise_encoder.finish()));
 
-        let noise_output = &textures.get(NOISE3DTEXTURE.name).unwrap().to_vec::<u8>(&device, &queue).await;
+//        let noise_output = &textures.get(NOISE3DTEXTURE.name).unwrap().to_vec::<u8>(&device, &queue).await;
 //        for i in 0..1024 {
 //            println!("{}", noise_output[i]);
 //        }
-        let mut noise_counter = 0;
-        for i in 0..131072*4 {
-            if noise_counter == 0 {
-                print!("{} :: (", i/4);
-            }
-            print!(" {} ",noise_output[i]);
-            if noise_counter == 3 {
-                println!(")");
-                noise_counter = 0;
-                continue;
-            }
-            noise_counter = noise_counter + 1;
+//        let mut noise_counter = 0;
+//        for i in 0..131072*4 {
+//            if noise_counter == 0 {
+//                print!("{} :: (", i/4);
+//            }
+//            print!(" {} ",noise_output[i]);
+//            if noise_counter == 3 {
+//                println!(")");
+//                noise_counter = 0;
+//                continue;
+//            }
+//            noise_counter = noise_counter + 1;
             //println!("{} :: origin: ({}, {}, {}, {})", i, sphere_output[offset], sphere_output[offset+1], sphere_output[offset+2], sphere_output[offset+3]);
             //println!("      intersection_point: ({}, {}, {}, {})", sphere_output[offset+4], sphere_output[offset+5], sphere_output[offset+6], sphere_output[offset+7]);
             //println!("      normal: ({}, {}, {}, {})", sphere_output[offset+8], sphere_output[offset+9], sphere_output[offset+10], sphere_output[offset+11]);
-        }
+//        }
 
         println!("");
 
@@ -1241,6 +1287,8 @@ impl State {
             sphere_tracer_bind_groups,
             sphere_tracer_compute_pipeline,
             time_counter,
+            multisampled_framebuffer, 
+            sample_count,
         }
     } // new(...
 
@@ -1376,12 +1424,14 @@ impl State {
                 _ => {}
         }
 
+        let multi_sampled = multisampled(self.sample_count);
+
         {
             let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 color_attachments: &[
                     wgpu::RenderPassColorAttachmentDescriptor {
-                        attachment: &frame.view,
-                        resolve_target: None,
+                            attachment: match multi_sampled { false => &frame.view, true => &self.multisampled_framebuffer, },
+                            resolve_target: match multi_sampled { false => None, true => Some(&frame.view), },
                         ops: wgpu::Operations {
                             load: wgpu::LoadOp::Clear(wgpu::Color { 
                                 r: 0.0,
@@ -1393,15 +1443,15 @@ impl State {
                         },
                     }
                 ],
-                //depth_stencil_attachment: None,
-                depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachmentDescriptor {
-                    attachment: &self.textures.get("DEPTH_TEXTURE_NAME").unwrap().view,
-                    depth_ops: Some(wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(1.0), 
-                        store: true,
-                        }),
-                    stencil_ops: None,
-                    }),
+                depth_stencil_attachment: None,
+                //depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachmentDescriptor {
+                //    attachment: &self.textures.get("DEPTH_TEXTURE_NAME").unwrap().view,
+                //    depth_ops: Some(wgpu::Operations {
+                //        load: wgpu::LoadOp::Clear(1.0), 
+                //        store: true,
+                //        }),
+                //    stencil_ops: None,
+                //    }),
             });
 
             match self.example {
@@ -1460,6 +1510,31 @@ impl State {
         //encoder.finish();
         self.queue.submit(Some(encoder.finish()));
     }
+}
+
+fn create_multisampled_framebuffer(
+    device: &wgpu::Device,
+    sc_desc: &wgpu::SwapChainDescriptor,
+    sample_count: u32,
+) -> wgpu::TextureView {
+    let multisampled_texture_extent = wgpu::Extent3d {
+        width: sc_desc.width,
+        height: sc_desc.height,
+        depth: 1,
+    };
+    let multisampled_frame_descriptor = &wgpu::TextureDescriptor {
+        size: multisampled_texture_extent,
+        mip_level_count: 1,
+        sample_count: sample_count,
+        dimension: wgpu::TextureDimension::D2,
+        format: sc_desc.format,
+        usage: wgpu::TextureUsage::OUTPUT_ATTACHMENT,
+        label: None,
+    };
+
+    device
+        .create_texture(multisampled_frame_descriptor)
+        .create_default_view()
 }
 
 /// Load shaders.
@@ -1724,18 +1799,18 @@ fn create_vertex_buffers(device: &wgpu::Device, buffers: &mut HashMap::<String, 
     println!("");
 }
 
-fn create_textures(device: &wgpu::Device, queue: &wgpu::Queue, sc_desc: &wgpu::SwapChainDescriptor, textures: &mut HashMap<String, gradu::Texture>) {
+fn create_textures(device: &wgpu::Device, queue: &wgpu::Queue, sc_desc: &wgpu::SwapChainDescriptor, textures: &mut HashMap<String, gradu::Texture>, sample_count: u32) {
 
     println!("\nCreating textures.\n");
     // Two triangles texture.
     print!("    * Creating texture from {}.", TWO_TRIANGLES_TEXTURE.source.expect("Missing texture source."));
-    let diffuse_texture = Texture::create_from_bytes(&queue, &device, &include_bytes!("grass2.png")[..], None);
+    let diffuse_texture = Texture::create_from_bytes(&queue, &device, &sc_desc, sample_count, &include_bytes!("grass2.png")[..], None);
     textures.insert(TWO_TRIANGLES_TEXTURE.name.to_string(), diffuse_texture);
     println!(" ... OK'");
 
     // Two triangles texture.
     print!("    * Creating texture from '{}'", ROCK_TEXTURE.source.expect("Missing texture source."));
-    let rock_texture = Texture::create_from_bytes(&queue, &device, &include_bytes!("rock.png")[..], None);
+    let rock_texture = Texture::create_from_bytes(&queue, &device, &sc_desc, sample_count, &include_bytes!("rock.png")[..], None);
     textures.insert(ROCK_TEXTURE.name.to_string(), rock_texture);
     println!(" ... OK'");
 
@@ -1745,7 +1820,7 @@ fn create_textures(device: &wgpu::Device, queue: &wgpu::Queue, sc_desc: &wgpu::S
     println!(" ... OK'");
       
     print!("    * Creating ray texture.");
-    let ray_texture = gradu::Texture::create_texture2D(&queue, &device, 256, 256);
+    let ray_texture = gradu::Texture::create_texture2D(&queue, &device, &sc_desc, sample_count, 256, 256);
     textures.insert(RAY_TEXTURE.to_string(), ray_texture);
     println!(" ... OK'");
 
@@ -1753,6 +1828,9 @@ fn create_textures(device: &wgpu::Device, queue: &wgpu::Queue, sc_desc: &wgpu::S
     let noise3dtexture = gradu::Texture::create_texture3D(
         &queue,
         &device,
+        &sc_desc, // TODO: choose which one to use.
+        //&wgpu::TextureFormat::Rgba32Float,//&sc_desc.format, // ,,,,,,,,,,,,,,,,,,
+        &sc_desc.format,
         NOISE3DTEXTURE.width.unwrap() as u32,
         NOISE3DTEXTURE.height.unwrap() as u32,
         NOISE3DTEXTURE.depth.unwrap() as u32,

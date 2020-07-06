@@ -213,15 +213,15 @@ impl Texture {
     /// its adding automaticallhy an alpha value of
     /// 255 to the image. TODO: check if aplha value already exists. TODO: allow a texture to been
     /// created from non png data.
-    pub fn create_from_bytes(queue: &wgpu::Queue, device: &wgpu::Device, bytes: &[u8], label: Option<&str>) -> Self {
+    pub fn create_from_bytes(queue: &wgpu::Queue, device: &wgpu::Device, sc_desc: &wgpu::SwapChainDescriptor, sample_count : u32, bytes: &[u8], label: Option<&str>) -> Self {
 
         let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
-            address_mode_u: wgpu::AddressMode::ClampToEdge,
-            address_mode_v: wgpu::AddressMode::ClampToEdge,
-            address_mode_w: wgpu::AddressMode::ClampToEdge,
+            address_mode_u: wgpu::AddressMode::MirrorRepeat,
+            address_mode_v: wgpu::AddressMode::MirrorRepeat,
+            address_mode_w: wgpu::AddressMode::MirrorRepeat,
             mag_filter: wgpu::FilterMode::Linear,
-            min_filter: wgpu::FilterMode::Nearest,
-            mipmap_filter: wgpu::FilterMode::Nearest,
+            min_filter: wgpu::FilterMode::Linear,
+            mipmap_filter: wgpu::FilterMode::Linear,
             lod_min_clamp: -100.0,
             lod_max_clamp: 100.0,
             compare: Some(wgpu::CompareFunction::Always),
@@ -273,9 +273,9 @@ impl Texture {
         let texture = device.create_texture(&wgpu::TextureDescriptor {
             size: texture_extent,
             mip_level_count: 1,
-            sample_count: 1,
+            sample_count: sample_count,
             dimension: wgpu::TextureDimension::D2,
-            format: wgpu::TextureFormat::Rgba8UnormSrgb,
+            format: sc_desc.format, // wgpu::TextureFormat::Rgba8UnormSrgb,
             usage: wgpu::TextureUsage::SAMPLED | wgpu::TextureUsage::COPY_DST,
             label: label,
         });
@@ -303,7 +303,8 @@ impl Texture {
             label: None,
             format: wgpu::TextureFormat::Rgba8UnormSrgb,
             dimension: wgpu::TextureViewDimension::D2,
-            aspect: wgpu::TextureAspect::default(),
+            //aspect: wgpu::TextureAspect::default(),
+            aspect: wgpu::TextureAspect::All,
             base_mip_level: 0,
             level_count: 1,
             base_array_layer: 0,
@@ -328,15 +329,15 @@ impl Texture {
         }
     }
 
-    pub fn create_texture2D(queue: &wgpu::Queue, device: &wgpu::Device, width: u32, height: u32) -> Self {
+    pub fn create_texture2D(queue: &wgpu::Queue, device: &wgpu::Device, sc_desc: &wgpu::SwapChainDescriptor, sample_count: u32, width: u32, height: u32) -> Self {
 
         let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
-            address_mode_u: wgpu::AddressMode::ClampToEdge,
-            address_mode_v: wgpu::AddressMode::ClampToEdge,
-            address_mode_w: wgpu::AddressMode::ClampToEdge,
+            address_mode_u: wgpu::AddressMode::MirrorRepeat,
+            address_mode_v: wgpu::AddressMode::MirrorRepeat,
+            address_mode_w: wgpu::AddressMode::MirrorRepeat,
             mag_filter: wgpu::FilterMode::Linear,
-            min_filter: wgpu::FilterMode::Nearest,
-            mipmap_filter: wgpu::FilterMode::Nearest,
+            min_filter: wgpu::FilterMode::Linear,
+            mipmap_filter: wgpu::FilterMode::Linear,
             lod_min_clamp: -100.0,
             lod_max_clamp: 100.0,
             compare: Some(wgpu::CompareFunction::Always),
@@ -352,9 +353,9 @@ impl Texture {
         let texture = device.create_texture(&wgpu::TextureDescriptor {
             size: texture_extent,
             mip_level_count: 1,
-            sample_count: 1,
+            sample_count: sample_count,
             dimension: wgpu::TextureDimension::D2,
-            format: wgpu::TextureFormat::Rgba8UnormSrgb,
+            format: sc_desc.format, //wgpu::TextureFormat::Rgba8UnormSrgb,
             usage: wgpu::TextureUsage::SAMPLED | wgpu::TextureUsage::COPY_DST,
             label: None,
         });
@@ -364,7 +365,8 @@ impl Texture {
             //format: wgpu::TextureFormat::Rgba8UnormSrgb,
             format: wgpu::TextureFormat::Rgba8UnormSrgb,
             dimension: wgpu::TextureViewDimension::D2,
-            aspect: wgpu::TextureAspect::default(),
+            //aspect: wgpu::TextureAspect::default(),
+            aspect: wgpu::TextureAspect::All,
             base_mip_level: 0,
             level_count: 1,
             base_array_layer: 0,
@@ -387,12 +389,12 @@ impl Texture {
         }
     }
 
-    pub fn create_texture3D(queue: &wgpu::Queue, device: &wgpu::Device, width: u32, height: u32, depth: u32) -> Self {
+    pub fn create_texture3D(queue: &wgpu::Queue, device: &wgpu::Device, sc_desc: &wgpu::SwapChainDescriptor, format: &wgpu::TextureFormat, width: u32, height: u32, depth: u32) -> Self {
 
         let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
-            address_mode_u: wgpu::AddressMode::ClampToEdge,
-            address_mode_v: wgpu::AddressMode::ClampToEdge,
-            address_mode_w: wgpu::AddressMode::ClampToEdge,
+            address_mode_u: wgpu::AddressMode::MirrorRepeat,
+            address_mode_v: wgpu::AddressMode::MirrorRepeat,
+            address_mode_w: wgpu::AddressMode::MirrorRepeat,
             mag_filter: wgpu::FilterMode::Linear,
             min_filter: wgpu::FilterMode::Nearest,
             mipmap_filter: wgpu::FilterMode::Nearest,
@@ -411,10 +413,11 @@ impl Texture {
         let texture = device.create_texture(&wgpu::TextureDescriptor {
             size: texture_extent,
             mip_level_count: 1,
-            sample_count: 1,
+            sample_count: 1, // this must always be 1
             dimension: wgpu::TextureDimension::D3,
-            format: wgpu::TextureFormat::Rgba8UnormSrgb,
-            usage: wgpu::TextureUsage::SAMPLED | wgpu::TextureUsage::COPY_DST | wgpu::TextureUsage::STORAGE | wgpu::TextureUsage::COPY_SRC,
+            format: *format, //wgpu::TextureFormat::Rgba8UnormSrgb,
+            //usage: wgpu::TextureUsage::SAMPLED | wgpu::TextureUsage::COPY_DST | wgpu::TextureUsage::STORAGE | wgpu::TextureUsage::COPY_SRC,
+            usage: wgpu::TextureUsage::SAMPLED | wgpu::TextureUsage::COPY_DST | wgpu::TextureUsage::COPY_SRC,
             label: None,
         });
 
@@ -422,7 +425,8 @@ impl Texture {
             label: None,
             format: wgpu::TextureFormat::Rgba8UnormSrgb,
             dimension: wgpu::TextureViewDimension::D3,
-            aspect: wgpu::TextureAspect::default(),
+            //aspect: wgpu::TextureAspect::default(),
+            aspect: wgpu::TextureAspect::All,
             base_mip_level: 0,
             level_count: 1,
             base_array_layer: 0,
@@ -802,7 +806,7 @@ impl Texture {
             size: texture_extent,
             // array_layer_count: 1, // only one texture now
             mip_level_count: 1,
-            sample_count: 1,
+            sample_count: 4,
             dimension: wgpu::TextureDimension::D1,
             //format: wgpu::TextureFormat::Rgba8Uint,
             format: wgpu::TextureFormat::Rgba8UnormSrgb,
