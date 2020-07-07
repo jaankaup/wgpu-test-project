@@ -6,6 +6,14 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use cgmath::{prelude::*, Vector3, Vector4, Point3};
 
+use winit::{
+    event::{Event, WindowEvent,KeyboardInput,ElementState,VirtualKeyCode},
+    event_loop::{ControlFlow, EventLoop},
+    window::Window
+};
+
+use gradu::{Camera, RayCamera, CameraController, CameraUniform, Buffer, create_cube, Mc_uniform_data, RayCameraUniform};
+
 enum Example {
     TwoTriangles,
     Cube,
@@ -15,13 +23,20 @@ enum Example {
     SPHERE_TRACER,
 }
 
-use winit::{
-    event::{Event, WindowEvent,KeyboardInput,ElementState,VirtualKeyCode},
-    event_loop::{ControlFlow, EventLoop},
-    window::Window
-};
+struct Textures {
+    grass: TextureInfo,
+    rock: TextureInfo,
+    noise3d: TextureInfo,
+    depth: TextureInfo,
+    //grass: TextureInfo = TextureInfo { name: "GrassTexture", source: Some("grass1.png"), width: None, height: None, depth: None },
+}
 
-use gradu::{Camera, RayCamera, CameraController, CameraUniform, Buffer, create_cube, Mc_uniform_data, RayCameraUniform};
+static TEXTURES: Textures = Textures {
+    grass: TextureInfo { name: "GrassTexture", source: Some("grass1.png"), width: None, height: None, depth: None },
+    rock: TextureInfo { name: "rock_texture",  source: Some("rock.png"), width: None, height: None, depth: None, },
+    noise3d: TextureInfo { name: "noise_3d_texture",  source: None, width: Some(128), height: Some(128), depth: Some(128), },
+    depth: TextureInfo { name: "depth_texture",  source: None, width: None, height: None, depth: None, },
+};
 
 #[derive(Clone, Copy)]
 struct ShaderModuleInfo {
@@ -34,6 +49,105 @@ enum Resource {
     TextureView(&'static str),
     TextureSampler(&'static str),
     Buffer(&'static str),
+}
+
+// TODO: REMOVE?
+enum PipelineType {
+    Compute(wgpu::ComputePipeline),
+    Render(wgpu::RenderPipeline),
+}
+
+struct VertexBufferInfo {
+    vertex_buffer_name: String,
+    index_buffer: Option<String>,
+    start_index: u32,
+    end_index: u32,
+    instances: u32,
+}
+
+struct RenderPass {
+    pipeline: wgpu::RenderPipeline,
+    bind_groups: Vec<wgpu::BindGroup>,
+}
+
+struct ComputePass {
+    pipeline: wgpu::ComputePipeline,
+    bind_groups: Vec<wgpu::BindGroup>,
+    dispatch_x: u32,
+    dispatch_y: u32,
+    dispatch_z: u32,
+}
+
+impl RenderPass {
+    fn execute(&self,
+               encoder: &mut wgpu::CommandEncoder,
+               frame: &wgpu::SwapChainTexture,
+               multisampled_framebuffer: &wgpu::TextureView,
+               textures: &HashMap<String, gradu::Texture>,
+               buffers: &HashMap<String, gradu::Buffer>,
+               vertex_buffer_info: &VertexBufferInfo,
+               sample_count: u32) {
+
+            let multi_sampled = multisampled(sample_count);
+
+            let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                color_attachments: &[
+                    wgpu::RenderPassColorAttachmentDescriptor {
+                            attachment: match multi_sampled { false => &frame.view, true => &multisampled_framebuffer, },
+                            resolve_target: match multi_sampled { false => None, true => Some(&frame.view), },
+                        ops: wgpu::Operations {
+                            load: wgpu::LoadOp::Clear(wgpu::Color { 
+                                r: 0.0,
+                                g: 0.0,
+                                b: 0.0,
+                                a: 1.0,
+                            }),
+                            store: true,
+                        },
+                    }
+                ],
+                //depth_stencil_attachment: None,
+                depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachmentDescriptor {
+                    attachment: &textures.get(TEXTURES.depth.name).unwrap().view,
+                    depth_ops: Some(wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(1.0), 
+                        store: true,
+                        }),
+                    stencil_ops: None,
+                    }),
+            });
+
+            render_pass.set_pipeline(&self.pipeline);
+
+            // Set bind groups.
+            for (e, bgs) in self.bind_groups.iter().enumerate() {
+                render_pass.set_bind_group(e as u32, &bgs, &[]);
+            }
+
+            // Set vertex buffer.
+            render_pass.set_vertex_buffer(
+                0,
+                buffers.get(&vertex_buffer_info.vertex_buffer_name).unwrap().buffer.slice(..)
+            );
+
+            // TODO: handle index buffer.
+
+            // Draw.
+            render_pass.draw(vertex_buffer_info.start_index..vertex_buffer_info.end_index, 0..vertex_buffer_info.instances);
+    }
+}
+
+impl ComputePass {
+
+    fn execute(&self, encoder: &mut wgpu::CommandEncoder) {
+
+        let mut ray_pass = encoder.begin_compute_pass();
+        ray_pass.set_pipeline(&self.pipeline);
+        for (e, bgs) in self.bind_groups.iter().enumerate() {
+            ray_pass.set_bind_group(e as u32, &bgs, &[]);
+        }
+        ray_pass.dispatch(self.dispatch_x, self.dispatch_y, self.dispatch_z);
+    }
 }
 
 struct BindGroupInfo {
@@ -63,11 +177,6 @@ struct ComputePipelineInfo {
     bind_groups: Vec<Vec<BindGroupInfo>>,
 }
 
-//enum PipelineInfo {
-//    Render(RenderPipelineInfo),
-//    Compute(ComputePipelineInfo),
-//}
-
 enum PipelineResult {
     Render(Vec<wgpu::BindGroup>, wgpu::RenderPipeline),
     Compute(Vec<wgpu::BindGroup>, wgpu::ComputePipeline),
@@ -79,39 +188,16 @@ static MC_UNIFORM_BUFFER : &'static str = "mc_uniform_buffer";
 static MC_COUNTER_BUFFER : &'static str = "mc_counter_buffer";
 static MC_OUTPUT_BUFFER : &'static str = "mc_output_buffer";
 static MC_DRAW_BUFFER : &'static str = "mc_draw_buffer";
-//static MC_INDEX_BUFFER : &'static str = "mc_index_buffer";
 static RAY_MARCH_OUTPUT_BUFFER : &'static str = "ray_march_output";
 static RAY_TEXTURE : &'static str = "ray_texture";
 static RAY_DEBUG_BUFFER : &'static str = "ray_debug_buffer";
 static SPHERE_TRACER_OUTPUT_BUFFER : &'static str = "sphere_tracer_output";
-//static RAY_MARCH_OUTPUT_STAGING_BUFFER : &'static str = "ray_march_output_staging";
 
 static RANDOM_TRIANGLES_BUFFER : &'static str = "random_buffer";
 static RANDOM_TRIANGLE_COUNT: u32 = 1000;
 
 static SPHERE_TRACER_OUTPUT_BUFFER_SIZE: u64 = 256*256*12*4;
 static RAY_MARCH_OUTPUT_BUFFER_SIZE: u64 = 256*256*4;
-
-
-static DEPTH_TEXTURE_NAME : &'static str = "depth_texture";
-
-// Define two triangles.
-  
-static TWO_TRIANGLES_TEXTURE: TextureInfo = TextureInfo {
-    name: "diffuse_texture",  
-    source: Some("grass1.png"), // make sure this is loaded before use. 
-    width: None,
-    height: None,
-    depth: None,
-};
-
-static ROCK_TEXTURE: TextureInfo = TextureInfo {
-    name: "rock_texture",  
-    source: Some("rock.png"), // make sure this is loaded before use. 
-    width: None,
-    height: None,
-    depth: None,
-};
 
 static NOISE3D_DIMENSION: (u64, u64, u64) = (128,128,128);
 
@@ -124,13 +210,8 @@ static NOISE3DTEXTURE: TextureInfo = TextureInfo {
 };
 
 static NOISE_OUTPUT_BUFFER : &'static str = "noise_buffer";
-//static NOISE_OUTPUT_BUFFER_SIZE: u64 = NOISE3D_DIMENSION.0 * NOISE3D_DIMENSION.1 * NOISE3D_DIMENSION.2 * 16;
 static NOISE_OUTPUT_BUFFER_SIZE: u64 = NOISE3D_DIMENSION.0 * NOISE3D_DIMENSION.1 * NOISE3D_DIMENSION.2 * 4;
 
-static TWO_TRIANGLES_INPUT_FORMATS: [(wgpu::VertexFormat, u64); 2]  = [
-    (wgpu::VertexFormat::Float4, 4 * std::mem::size_of::<f32>() as u64),
-    (wgpu::VertexFormat::Float4, 4 * std::mem::size_of::<f32>() as u64)
-];
 
 static TWO_TRIANGLES_SHADERS: [ShaderModuleInfo; 2]  = [
     ShaderModuleInfo {name: "two_triangles_vert", source_file: "two_triangles_vert.spv", stage: "vertex"},
@@ -192,7 +273,7 @@ fn create_two_triangles_info(sample_count: u32) -> RenderPipelineInfo {
                     BindGroupInfo {
                         binding: 0,
                         visibility: wgpu::ShaderStage::FRAGMENT,
-                        resource: Resource::TextureView(TWO_TRIANGLES_TEXTURE.name),
+                        resource: Resource::TextureView(TEXTURES.grass.name),
                         binding_type: wgpu::BindingType::SampledTexture {
                            multisampled: multisampled(sample_count),
                            component_type: wgpu::TextureComponentType::Float,
@@ -202,9 +283,9 @@ fn create_two_triangles_info(sample_count: u32) -> RenderPipelineInfo {
                     BindGroupInfo {
                         binding: 1,
                         visibility: wgpu::ShaderStage::FRAGMENT,
-                        resource: Resource::TextureSampler(TWO_TRIANGLES_TEXTURE.name),
+                        resource: Resource::TextureSampler(TEXTURES.grass.name),
                         binding_type: wgpu::BindingType::Sampler {
-                           comparison: true,
+                           comparison: false,
                         },
                     },
                 ],
@@ -247,7 +328,7 @@ fn vtn_renderer_info(sample_count: u32) -> RenderPipelineInfo {
                    BindGroupInfo {
                             binding: 0,
                             visibility: wgpu::ShaderStage::FRAGMENT,
-                            resource: Resource::TextureView(TWO_TRIANGLES_TEXTURE.name),
+                            resource: Resource::TextureView(TEXTURES.grass.name),
                             binding_type: wgpu::BindingType::SampledTexture {
                                multisampled: multisampled(sample_count),
                                component_type: wgpu::TextureComponentType::Float,
@@ -257,9 +338,9 @@ fn vtn_renderer_info(sample_count: u32) -> RenderPipelineInfo {
                    BindGroupInfo {
                        binding: 1,
                        visibility: wgpu::ShaderStage::FRAGMENT,
-                       resource: Resource::TextureSampler(TWO_TRIANGLES_TEXTURE.name),
+                       resource: Resource::TextureSampler(TEXTURES.grass.name),
                        binding_type: wgpu::BindingType::Sampler {
-                          comparison: true,
+                          comparison: false,
                        },
                    },
                ],
@@ -304,7 +385,7 @@ fn ray_renderer_info(sample_count: u32) -> RenderPipelineInfo {
                         visibility: wgpu::ShaderStage::FRAGMENT,
                         resource: Resource::TextureSampler(RAY_TEXTURE),
                         binding_type: wgpu::BindingType::Sampler {
-                           comparison: true,
+                           comparison: false,
                         },
                     },
                 ],
@@ -347,7 +428,7 @@ fn mc_renderer_info(sample_count: u32) -> RenderPipelineInfo {
                    BindGroupInfo {
                             binding: 0,
                             visibility: wgpu::ShaderStage::FRAGMENT,
-                            resource: Resource::TextureView(TWO_TRIANGLES_TEXTURE.name),
+                            resource: Resource::TextureView(TEXTURES.grass.name),
                             binding_type: wgpu::BindingType::SampledTexture {
                                multisampled: multisampled(sample_count),
                                component_type: wgpu::TextureComponentType::Float,
@@ -357,9 +438,9 @@ fn mc_renderer_info(sample_count: u32) -> RenderPipelineInfo {
                    BindGroupInfo {
                        binding: 1,
                        visibility: wgpu::ShaderStage::FRAGMENT,
-                       resource: Resource::TextureSampler(TWO_TRIANGLES_TEXTURE.name),
+                       resource: Resource::TextureSampler(TEXTURES.grass.name),
                        binding_type: wgpu::BindingType::Sampler {
-                          comparison: true,
+                          comparison: false,
                        },
                    },
                ],
@@ -443,7 +524,7 @@ fn ray_march_info(sample_count: u32) -> ComputePipelineInfo {
                    BindGroupInfo {
                         binding: 0,
                         visibility: wgpu::ShaderStage::COMPUTE,
-                        resource: Resource::TextureView(TWO_TRIANGLES_TEXTURE.name),
+                        resource: Resource::TextureView(TEXTURES.grass.name),
                         binding_type: wgpu::BindingType::SampledTexture {
                            multisampled: multisampled(sample_count),
                            component_type: wgpu::TextureComponentType::Float,
@@ -453,7 +534,7 @@ fn ray_march_info(sample_count: u32) -> ComputePipelineInfo {
                    BindGroupInfo {
                         binding: 1,
                         visibility: wgpu::ShaderStage::COMPUTE,
-                        resource: Resource::TextureView(TWO_TRIANGLES_TEXTURE.name),
+                        resource: Resource::TextureView(TEXTURES.grass.name),
                         binding_type: wgpu::BindingType::SampledTexture {
                            multisampled: multisampled(sample_count),
                            component_type: wgpu::TextureComponentType::Float,
@@ -515,7 +596,7 @@ fn sphere_tracer_info(sample_count: u32) -> ComputePipelineInfo {
                    BindGroupInfo {
                         binding: 0,
                         visibility: wgpu::ShaderStage::COMPUTE,
-                        resource: Resource::TextureView(TWO_TRIANGLES_TEXTURE.name),
+                        resource: Resource::TextureView(TEXTURES.grass.name),
                         binding_type: wgpu::BindingType::SampledTexture {
                            multisampled: multisampled(sample_count),
                            component_type: wgpu::TextureComponentType::Float,
@@ -525,9 +606,9 @@ fn sphere_tracer_info(sample_count: u32) -> ComputePipelineInfo {
                    BindGroupInfo {
                        binding: 1,
                        visibility: wgpu::ShaderStage::COMPUTE,
-                       resource: Resource::TextureSampler(TWO_TRIANGLES_TEXTURE.name),
+                       resource: Resource::TextureSampler(TEXTURES.grass.name),
                        binding_type: wgpu::BindingType::Sampler {
-                          comparison: true,
+                          comparison: false,
                        },
                    },
                    //BindGroupInfo {
@@ -543,7 +624,7 @@ fn sphere_tracer_info(sample_count: u32) -> ComputePipelineInfo {
                    BindGroupInfo {
                         binding: 2,
                         visibility: wgpu::ShaderStage::COMPUTE,
-                        resource: Resource::TextureView(ROCK_TEXTURE.name),
+                        resource: Resource::TextureView(TEXTURES.rock.name),
                         binding_type: wgpu::BindingType::SampledTexture {
                            multisampled: multisampled(sample_count),
                            component_type: wgpu::TextureComponentType::Float,
@@ -553,15 +634,15 @@ fn sphere_tracer_info(sample_count: u32) -> ComputePipelineInfo {
                    BindGroupInfo {
                        binding: 3,
                        visibility: wgpu::ShaderStage::COMPUTE,
-                       resource: Resource::TextureSampler(ROCK_TEXTURE.name),
+                       resource: Resource::TextureSampler(TEXTURES.rock.name),
                        binding_type: wgpu::BindingType::Sampler {
-                          comparison: true,
+                          comparison: false,
                        },
                    },
                    //BindGroupInfo {
                    //     binding: 3,
                    //     visibility: wgpu::ShaderStage::COMPUTE,
-                   //     resource: Resource::TextureView(ROCK_TEXTURE.name),
+                   //     resource: Resource::TextureView(TEXTURES.rock.name),
                    //     binding_type: wgpu::BindingType::SampledTexture {
                    //        multisampled: multisampled(sample_count),
                    //        component_type: wgpu::TextureComponentType::Float,
@@ -583,7 +664,7 @@ fn sphere_tracer_info(sample_count: u32) -> ComputePipelineInfo {
                        visibility: wgpu::ShaderStage::COMPUTE,
                        resource: Resource::TextureSampler(NOISE3DTEXTURE.name),
                        binding_type: wgpu::BindingType::Sampler {
-                          comparison: true,
+                          comparison: false,
                        },
                    },
                    //BindGroupInfo {
@@ -770,17 +851,17 @@ fn create_render_pipeline_and_bind_groups(device: &wgpu::Device,
                 write_mask: wgpu::ColorWrite::ALL,
             },
         ],
-        depth_stencil_state: None,
-        //depth_stencil_state: Some(wgpu::DepthStencilStateDescriptor {
-        //    format: Texture::DEPTH_FORMAT,
-        //    depth_write_enabled: true,
-        //    depth_compare: wgpu::CompareFunction::Less,
-        //    stencil_front: wgpu::StencilStateFaceDescriptor::IGNORE,
-        //    stencil_back: wgpu::StencilStateFaceDescriptor::IGNORE,
-        //    stencil_read_mask: 0,
-        //    stencil_write_mask: 0,
-        //    //stencil_read_only: false,
-        //}),
+        //depth_stencil_state: None,
+        depth_stencil_state: Some(wgpu::DepthStencilStateDescriptor {
+            format: Texture::DEPTH_FORMAT,
+            depth_write_enabled: true,
+            depth_compare: wgpu::CompareFunction::Less,
+            stencil_front: wgpu::StencilStateFaceDescriptor::IGNORE,
+            stencil_back: wgpu::StencilStateFaceDescriptor::IGNORE,
+            stencil_read_mask: 0,
+            stencil_write_mask: 0,
+            //stencil_read_only: false,
+        }),
         vertex_state: wgpu::VertexStateDescriptor {
             index_format: wgpu::IndexFormat::Uint16,
             vertex_buffers: &[wgpu::VertexBufferDescriptor {
@@ -886,30 +967,19 @@ pub struct State {
     render_pipelines: HashMap<String,wgpu::RenderPipeline>,
     compute_pipelines: HashMap<String,wgpu::ComputePipeline>,
     textures: HashMap<String,gradu::Texture>,
-    two_triangles_bind_groups: Vec<wgpu::BindGroup>,
-    two_triangles_render_pipeline: wgpu::RenderPipeline,
-    vtn_bind_groups: Vec<wgpu::BindGroup>,
-    vtn_render_pipeline: wgpu::RenderPipeline,
     camera: Camera,
     ray_camera: RayCamera,
     camera_controller: CameraController,
     camera_uniform: CameraUniform,
     example: Example,
-    mc_render_bind_groups: Vec<wgpu::BindGroup>,
-    mc_render_pipeline: wgpu::RenderPipeline,
-    mc_compute_bind_groups: Vec<wgpu::BindGroup>,
-    mc_compute_pipeline: wgpu::ComputePipeline,
-    mc_vertex_count: u32,
-    ray_march_bind_groups: Vec<wgpu::BindGroup>,
-    ray_march_compute_pipeline: wgpu::ComputePipeline,
-    ray_renderer_bind_groups: Vec<wgpu::BindGroup>,
-    ray_renderer_pipeline: wgpu::RenderPipeline,
+    //mc_vertex_count: u32,
     ray_camera_uniform: gradu::RayCameraUniform,
-    sphere_tracer_bind_groups: Vec<wgpu::BindGroup>,
-    sphere_tracer_compute_pipeline: wgpu::ComputePipeline,
     time_counter: u128,
     multisampled_framebuffer: wgpu::TextureView,
     sample_count: u32,
+    render_passes: HashMap<String, RenderPass>,
+    compute_passes: HashMap<String, ComputePass>,
+    vertex_buffer_infos: HashMap<String, VertexBufferInfo>,
 }
 
 use gradu::Texture;  
@@ -923,6 +993,7 @@ impl State {
         let time_counter = start
             .duration_since(UNIX_EPOCH)
             .expect("Could't get the time.").as_nanos();
+
         let sample_count = 1;
                                                                                   
         let example = Example::TwoTriangles;
@@ -999,17 +1070,20 @@ impl State {
             focalDistance: 1.0, // camera distance to the camera screen.
         };
 
+        // TODO: REMOVE?
         ray_camera.view = Vector3::new(
             0.0,
             0.0,
             -1.0,
         );
+        // TODO: REMOVE?
         ray_camera.up = Vector3::new(
             0.0,
             1.0,
             0.0,
         );
 
+        // TODO: REMOVE?
         ray_camera.view = ray_camera.view.normalize_to(1.0);
 
         let mut ray_camera_uniform = RayCameraUniform::new(); 
@@ -1023,9 +1097,14 @@ impl State {
 
         buffers.insert(RAY_CAMERA_UNIFORM_BUFFER.to_string(), ray_camera_buffer);
 
-        let two_triangles_info = create_two_triangles_info(sample_count); 
+        let mut render_passes: HashMap<String, RenderPass> = HashMap::new();
+        let mut compute_passes: HashMap<String, ComputePass> = HashMap::new();
+        let mut vertex_buffer_infos: HashMap<String, VertexBufferInfo> = HashMap::new();
+
+        /* TWO TRIANGLES */
 
         println!("Creating two_triangles pipeline and bind groups.\n");
+        let two_triangles_info = create_two_triangles_info(sample_count); 
         let (two_triangles_bind_groups, two_triangles_render_pipeline) = create_render_pipeline_and_bind_groups(
                         &device,
                         &sc_desc,
@@ -1035,9 +1114,27 @@ impl State {
                         &two_triangles_info,
                         sample_count);
 
-        let vtn_info = vtn_renderer_info(sample_count);
+        let two_triangles_vb_info = VertexBufferInfo {
+            vertex_buffer_name: "two_triangles_buffer".to_string(),
+            index_buffer: None,
+            start_index: 0,
+            end_index: 6,
+            instances: 2,
+        };
+
+        vertex_buffer_infos.insert("two_triangles_vb_info".to_string(), two_triangles_vb_info);
+
+        let twoTriangles = RenderPass {
+            pipeline: two_triangles_render_pipeline,
+            bind_groups: two_triangles_bind_groups,
+        };
+
+        render_passes.insert("two_triangles_render_pass".to_string(), twoTriangles);
+
+        /* CUBE */
 
         println!("\nCreating vtn_render pipeline and bind groups.\n");
+        let vtn_info = vtn_renderer_info(sample_count);
         let (vtn_bind_groups, vtn_render_pipeline) = create_render_pipeline_and_bind_groups(
                         &device,
                         &sc_desc,
@@ -1047,11 +1144,29 @@ impl State {
                         &vtn_info,
                         sample_count);
 
+        let vtn_vb_info = VertexBufferInfo {
+            vertex_buffer_name: "cube_buffer".to_string(),
+            index_buffer: None,
+            start_index: 0,
+            end_index: 36,
+            instances: 12,
+        };
+
+        vertex_buffer_infos.insert("vtn_vb_info".to_string(), vtn_vb_info);
+
+        let vtn_render_pass = RenderPass {
+            pipeline: vtn_render_pipeline,
+            bind_groups: vtn_bind_groups,
+        };
+
+        render_passes.insert("vtn_render_pass".to_string(), vtn_render_pass);
+
         println!("");
 
-        let ray_renderer_info = ray_renderer_info(sample_count); 
+        /* RAY RENDERER */
 
         println!("\nCreating ray renderer pipeline and bind groups.\n");
+        let ray_renderer_info = ray_renderer_info(sample_count); 
         let (ray_renderer_bind_groups, ray_renderer_pipeline) = create_render_pipeline_and_bind_groups(
                         &device,
                         &sc_desc,
@@ -1061,11 +1176,29 @@ impl State {
                         &ray_renderer_info,
                         sample_count);
 
+        let ray_renderer_vb_info = VertexBufferInfo {
+            vertex_buffer_name: "two_triangles_buffer".to_string(),
+            index_buffer: None,
+            start_index: 0,
+            end_index: 6,
+            instances: 2,
+        };
+
+        vertex_buffer_infos.insert("ray_renderer_vb_info".to_string(), ray_renderer_vb_info);
+
+        let ray_renderer_pass = RenderPass {
+            pipeline: ray_renderer_pipeline,
+            bind_groups: ray_renderer_bind_groups,
+        };
+
+        render_passes.insert("ray_renderer_pass".to_string(), ray_renderer_pass);
+
         println!("");
 
-        let mc_renderer_info = mc_renderer_info(sample_count); 
+        /* MARCHING CUBES RENDERER */
 
         println!("\nCreating mc_render pipeline and bind groups.\n");
+        let mc_renderer_info = mc_renderer_info(sample_count); 
         let (mc_render_bind_groups, mc_render_pipeline) = create_render_pipeline_and_bind_groups(
                         &device,
                         &sc_desc,
@@ -1075,9 +1208,36 @@ impl State {
                         &mc_renderer_info,
                         sample_count);
 
+        let mc_renderer_vb_info = VertexBufferInfo {
+            vertex_buffer_name: MC_OUTPUT_BUFFER.to_string(),
+            index_buffer: None,
+            start_index: 0,
+            end_index: 0,
+            instances: 0,
+        };
+
+        // TODO: move this somewhere else.
+        let random_triangles_vb_info = VertexBufferInfo {
+            vertex_buffer_name: RANDOM_TRIANGLES_BUFFER.to_string(),
+            index_buffer: None,
+            start_index: 0,
+            end_index: RANDOM_TRIANGLE_COUNT*3,
+            instances: RANDOM_TRIANGLE_COUNT,
+        };
+        
+        vertex_buffer_infos.insert("random_triangles_vb_info".to_string(), random_triangles_vb_info);
+        vertex_buffer_infos.insert("mc_renderer_vb_info".to_string(), mc_renderer_vb_info);
+
+        let mc_renderer_pass = RenderPass {
+            pipeline: mc_render_pipeline,
+            bind_groups: mc_render_bind_groups,
+        };
+
+        render_passes.insert("mc_renderer_pass".to_string(), mc_renderer_pass);
+
         println!("");
 
-        println!("\nCreating mc_render pipeline and bind groups.\n");
+        println!("\nCreating marching cubes pipeline and bind groups.\n");
         let mc_compute_info = marching_cubes_info();
         let (mc_compute_bind_groups, mc_compute_pipeline) = create_compute_pipeline_and_bind_groups(
                         &device,
@@ -1087,29 +1247,58 @@ impl State {
                         &buffers,
                         &mc_compute_info);
 
+        let mc_compute_pass = ComputePass {
+            pipeline: mc_compute_pipeline,
+            bind_groups: mc_compute_bind_groups,
+            dispatch_x: 8,
+            dispatch_y: 8,
+            dispatch_z: 8,
+        };
+
+        compute_passes.insert("mc_compute_pass".to_string(), mc_compute_pass);
+
         println!("");
 
-        println!("\nCreating ray_march pipeline and bind groups.\n");
-        let ray_march_info = ray_march_info(sample_count);
-        let (ray_march_bind_groups, ray_march_compute_pipeline) = create_compute_pipeline_and_bind_groups(
+        println!("\nCreating volumetric ray cast (noise) pipeline and bind groups.\n");
+        let volume_noise_info = ray_march_info(sample_count); // TODO: rename info function.
+        let (volume_noise_bind_groups, volume_noise_compute_pipeline) = create_compute_pipeline_and_bind_groups(
                         &device,
                         &sc_desc,
                         &shaders,
                         &textures,
                         &buffers,
-                        &ray_march_info);
+                        &volume_noise_info);
+        
+        let volume_noise_pass = ComputePass {
+            pipeline: volume_noise_compute_pipeline,
+            bind_groups: volume_noise_bind_groups,
+            dispatch_x: 32,
+            dispatch_y: 32,
+            dispatch_z: 1,
+        };
 
+        compute_passes.insert("volume_noise_pass".to_string(), volume_noise_pass);
         println!("");
 
-        println!("\nCreating scphere_marcher pipeline and bind groups.\n");
-        let sphere_tracer_info = sphere_tracer_info(sample_count);
-        let (sphere_tracer_bind_groups, sphere_tracer_compute_pipeline) = create_compute_pipeline_and_bind_groups(
+        println!("\nCreating volumetric ray caster (3d texture) pipeline and bind groups.\n");
+        let volume_3d_info = sphere_tracer_info(sample_count); // TODO: rename info function.
+        let (volume_3d_bind_groups, volume_3d_compute_pipeline) = create_compute_pipeline_and_bind_groups(
                         &device,
                         &sc_desc,
                         &shaders,
                         &textures,
                         &buffers,
-                        &sphere_tracer_info);
+                        &volume_3d_info);
+
+        let volume_3d_pass = ComputePass {
+            pipeline: volume_3d_compute_pipeline,
+            bind_groups: volume_3d_bind_groups,
+            dispatch_x: 32,
+            dispatch_y: 32,
+            dispatch_z: 1,
+        };
+
+        compute_passes.insert("volume_3d_pass".to_string(), volume_3d_pass);
 
         println!("");
 
@@ -1123,19 +1312,25 @@ impl State {
                         &buffers,
                         &noise3d_info);
 
+        let noise_3d_pass = ComputePass {
+            pipeline: noise3d_compute_pipeline,
+            bind_groups: noise3d_bind_groups,
+            dispatch_x: NOISE3D_DIMENSION.0 as u32 / 4,
+            dispatch_y: NOISE3D_DIMENSION.1 as u32 / 4,
+            dispatch_z: NOISE3D_DIMENSION.2 as u32 / 4,
+        };
+
+        compute_passes.insert("noise_3d_pass".to_string(), noise_3d_pass);
+
         println!("");
 
         println!("\nLaunching generate 3d noise.\n");
-        let mut noise_encoder = 
-            device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
-        {
-            let mut noise_pass = noise_encoder.begin_compute_pass();
-            noise_pass.set_pipeline(&noise3d_compute_pipeline);
-            for (e, bgs) in noise3d_bind_groups.iter().enumerate() {
-                noise_pass.set_bind_group(e as u32, &bgs, &[]);
-            }
-            noise_pass.dispatch(NOISE3D_DIMENSION.0 as u32 / 4, NOISE3D_DIMENSION.1 as u32 / 4, NOISE3D_DIMENSION.2 as u32 / 4); // TODOOOOO
-        }
+
+        let mut noise_encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
+
+        compute_passes.get("noise_3d_pass")
+                      .unwrap()
+                      .execute(&mut noise_encoder);
 
         let noise_texture_dimension_x = NOISE3DTEXTURE.width.expect("Consider giving NOISE3DTEXTURE a width.") as u32;
         let noise_texture_dimension_y = NOISE3DTEXTURE.height.expect("Consider giving NOISE3DTEXTURE a height.") as u32;
@@ -1186,40 +1381,40 @@ impl State {
 
         println!("");
 
-        println!("\nLaunching sphere tracer.\n");
-        let mut sphere_encoder = 
-            device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
-        {
-            let mut sphere_pass = sphere_encoder.begin_compute_pass();
-            sphere_pass.set_pipeline(&sphere_tracer_compute_pipeline);
-            for (e, bgs) in sphere_tracer_bind_groups.iter().enumerate() {
-                sphere_pass.set_bind_group(e as u32, &bgs, &[]);
-            }
-            sphere_pass.dispatch(32,32,1);
-        }
+        //println!("\nLaunching sphere tracer.\n");
+        //let mut sphere_encoder = 
+        //    device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
+        //{
+        //    let mut sphere_pass = sphere_encoder.begin_compute_pass();
+        //    sphere_pass.set_pipeline(&sphere_tracer_compute_pipeline);
+        //    for (e, bgs) in sphere_tracer_bind_groups.iter().enumerate() {
+        //        sphere_pass.set_bind_group(e as u32, &bgs, &[]);
+        //    }
+        //    sphere_pass.dispatch(32,32,1);
+        //}
 
-        sphere_encoder.copy_buffer_to_texture(
-            wgpu::BufferCopyView {
-                buffer: &buffers.get(RAY_MARCH_OUTPUT_BUFFER).unwrap().buffer,
-                layout: wgpu::TextureDataLayout {
-                    offset: 0,
-                    bytes_per_row: 256 * 4, //bits_per_pixel * width ,
-                    //bytes_per_row: bits_per_pixel * width ,
-                    rows_per_image: 256,
-                },
-            },
-            wgpu::TextureCopyView{
-                texture: &textures.get(RAY_TEXTURE).unwrap().texture,
-                mip_level: 0,
-                origin: wgpu::Origin3d::ZERO,
-            },
-            wgpu::Extent3d {
-                width: 256,
-                height: 256,
-                depth: 1,
-            });
+        //sphere_encoder.copy_buffer_to_texture(
+        //    wgpu::BufferCopyView {
+        //        buffer: &buffers.get(RAY_MARCH_OUTPUT_BUFFER).unwrap().buffer,
+        //        layout: wgpu::TextureDataLayout {
+        //            offset: 0,
+        //            bytes_per_row: 256 * 4, //bits_per_pixel * width ,
+        //            //bytes_per_row: bits_per_pixel * width ,
+        //            rows_per_image: 256,
+        //        },
+        //    },
+        //    wgpu::TextureCopyView{
+        //        texture: &textures.get(RAY_TEXTURE).unwrap().texture,
+        //        mip_level: 0,
+        //        origin: wgpu::Origin3d::ZERO,
+        //    },
+        //    wgpu::Extent3d {
+        //        width: 256,
+        //        height: 256,
+        //        depth: 1,
+        //    });
 
-        queue.submit(Some(sphere_encoder.finish()));
+        //queue.submit(Some(sphere_encoder.finish()));
 
         // let sphere_output = &buffers.get(SPHERE_TRACER_OUTPUT_BUFFER).unwrap().to_vec::<f32>(&device, &queue, true).await;
         // for i in 0..256*256 {
@@ -1233,16 +1428,11 @@ impl State {
 
         println!("\nLaunching marching cubes.\n");
 
-        let mut mc_encoder = 
-            device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
-        {
-            let mut mc_pass = mc_encoder.begin_compute_pass();
-            mc_pass.set_pipeline(&mc_compute_pipeline);
-            for (e, bgs) in mc_compute_bind_groups.iter().enumerate() {
-                mc_pass.set_bind_group(e as u32, &bgs, &[]);
-            }
-            mc_pass.dispatch(8,8,8);
-        }
+        let mut mc_encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
+
+        compute_passes.get("mc_compute_pass")
+                      .unwrap()
+                      .execute(&mut mc_encoder);
 
         mc_encoder.copy_buffer_to_buffer(&buffers.get(MC_OUTPUT_BUFFER).unwrap().buffer, 0, &buffers.get(MC_DRAW_BUFFER).unwrap().buffer, 0, 4 * 64*64*64);
 
@@ -1250,8 +1440,13 @@ impl State {
 
         let k = &buffers.get(MC_COUNTER_BUFFER).unwrap().to_vec::<u32>(&device, &queue, true).await;
         let mc_vertex_count = k[0];
+        {
+            let mut rp = vertex_buffer_infos.get_mut("mc_renderer_vb_info") .unwrap();
+            rp.end_index = mc_vertex_count; 
+            rp.instances = mc_vertex_count/6; 
+        }
 
-        println!(" ... OK'");
+        //println!(" ... OK'");
 
         Self {
             surface,
@@ -1264,48 +1459,31 @@ impl State {
             bind_groups,
             render_pipelines,
             compute_pipelines,
-            two_triangles_bind_groups,
-            two_triangles_render_pipeline,
-            vtn_bind_groups,
-            vtn_render_pipeline,
             camera,
             ray_camera, 
             camera_controller,
             camera_uniform,
             textures,
             example,
-            mc_render_bind_groups,
-            mc_render_pipeline,
-            mc_compute_bind_groups,
-            mc_compute_pipeline,
-            mc_vertex_count,
-            ray_march_bind_groups,
-            ray_march_compute_pipeline,
-            ray_renderer_bind_groups,
-            ray_renderer_pipeline,
+            //mc_vertex_count,
             ray_camera_uniform,
-            sphere_tracer_bind_groups,
-            sphere_tracer_compute_pipeline,
             time_counter,
             multisampled_framebuffer, 
             sample_count,
+            render_passes,
+            compute_passes,
+            vertex_buffer_infos,
         }
     } // new(...
 
-    // TODO: crashes when resized.
     pub fn resize(&mut self, new_size: winit::dpi::PhysicalSize<u32>) {
         self.size = new_size;
         self.sc_desc.width = new_size.width;
         self.sc_desc.height = new_size.height;
         self.swap_chain = self.device.create_swap_chain(&self.surface, &self.sc_desc);
 
-        //self.device.poll(wgpu::Maintain::Wait);
-
-        println!("creating depth_texture");
         let depth_texture = Texture::create_depth_texture(&self.device, &self.sc_desc, Some("depth-texture"));
-        self.textures.insert("depth_texture".to_string(), depth_texture);
-        println!("creatin depth_texture .. Done");
-
+        self.textures.insert(TEXTURES.depth.name.to_string(), depth_texture);
     }
 
     pub fn input(&mut self, event: &WindowEvent) -> bool {
@@ -1359,14 +1537,9 @@ impl State {
 
                 Example::RAY_MARCH => {
 
-                    {
-                        let mut ray_pass = encoder.begin_compute_pass();
-                        ray_pass.set_pipeline(&self.ray_march_compute_pipeline);
-                        for (e, bgs) in self.ray_march_bind_groups.iter().enumerate() {
-                            ray_pass.set_bind_group(e as u32, &bgs, &[]);
-                        }
-                        ray_pass.dispatch(32,32,1);
-                    }
+                    self.compute_passes.get("volume_noise_pass")
+                    .unwrap()
+                    .execute(&mut encoder);
 
                     encoder.copy_buffer_to_texture(
                         wgpu::BufferCopyView {
@@ -1392,14 +1565,9 @@ impl State {
                 // Launch sprhere tracer.
                 Example::SPHERE_TRACER => {
 
-                    {
-                        let mut ray_pass = encoder.begin_compute_pass();
-                        ray_pass.set_pipeline(&self.sphere_tracer_compute_pipeline);
-                        for (e, bgs) in self.sphere_tracer_bind_groups.iter().enumerate() {
-                            ray_pass.set_bind_group(e as u32, &bgs, &[]);
-                        }
-                        ray_pass.dispatch(32,32,1);
-                    }
+                    self.compute_passes.get("volume_3d_pass")
+                    .unwrap()
+                    .execute(&mut encoder);
 
                     encoder.copy_buffer_to_texture(
                         wgpu::BufferCopyView { 
@@ -1427,84 +1595,65 @@ impl State {
         let multi_sampled = multisampled(self.sample_count);
 
         {
-            let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                color_attachments: &[
-                    wgpu::RenderPassColorAttachmentDescriptor {
-                            attachment: match multi_sampled { false => &frame.view, true => &self.multisampled_framebuffer, },
-                            resolve_target: match multi_sampled { false => None, true => Some(&frame.view), },
-                        ops: wgpu::Operations {
-                            load: wgpu::LoadOp::Clear(wgpu::Color { 
-                                r: 0.0,
-                                g: 0.0,
-                                b: 0.0,
-                                a: 1.0,
-                            }),
-                            store: true,
-                        },
-                    }
-                ],
-                depth_stencil_attachment: None,
-                //depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachmentDescriptor {
-                //    attachment: &self.textures.get("DEPTH_TEXTURE_NAME").unwrap().view,
-                //    depth_ops: Some(wgpu::Operations {
-                //        load: wgpu::LoadOp::Clear(1.0), 
-                //        store: true,
-                //        }),
-                //    stencil_ops: None,
-                //    }),
-            });
-
             match self.example {
                 Example::TwoTriangles => {
-                    render_pass.set_pipeline(&self.two_triangles_render_pipeline);
-                    for (e, bgs) in self.two_triangles_bind_groups.iter().enumerate() {
-                        render_pass.set_bind_group(e as u32, &bgs, &[]);
-                    }
-                    render_pass.set_vertex_buffer(0, self.buffers.get("two_triangles_buffer").unwrap().buffer.slice(..));
-                    render_pass.draw(0..6, 0..2);
-                }
-
+                    let vb_info = self.vertex_buffer_infos.get("two_triangles_vb_info").expect("Could not find vertex buffer info");
+                    self.render_passes.get("two_triangles_render_pass")
+                    .unwrap()
+                    .execute(&mut encoder, &frame, &self.multisampled_framebuffer, &self.textures, &self.buffers, &vb_info, self.sample_count);
+                },
                 Example::Cube => {
-                    render_pass.set_pipeline(&self.vtn_render_pipeline);
-                    for (e, bgs) in self.vtn_bind_groups.iter().enumerate() {
-                        render_pass.set_bind_group(e as u32, &bgs, &[]);
-                    }
-                    render_pass.set_vertex_buffer(0, self.buffers.get("cube_buffer").unwrap().buffer.slice(..));
-                    render_pass.draw(0..36, 0..12);
-                }
+                    let vb_info = self.vertex_buffer_infos.get("vtn_vb_info").expect("Could not find vertex buffer info");
+                    self.render_passes.get("vtn_render_pass")
+                    .unwrap()
+                    .execute(&mut encoder, &frame, &self.multisampled_framebuffer, &self.textures, &self.buffers, &vb_info, self.sample_count);
+                },
                 Example::MC => {
-                    render_pass.set_pipeline(&self.mc_render_pipeline);
-                    for (e, bgs) in self.mc_render_bind_groups.iter().enumerate() {
-                        render_pass.set_bind_group(e as u32, &bgs, &[]);
-                    }
-                    render_pass.set_vertex_buffer(0, self.buffers.get(MC_DRAW_BUFFER).unwrap().buffer.slice(..));
-                    render_pass.draw(0..self.mc_vertex_count, 0..self.mc_vertex_count/3);
+                    let mut rp = self.vertex_buffer_infos.get("mc_renderer_vb_info") .unwrap();
+                    self.render_passes.get("mc_renderer_pass")
+                    .unwrap()
+                    .execute(&mut encoder, &frame, &self.multisampled_framebuffer, &self.textures, &self.buffers, &rp, self.sample_count);
                 }
                 Example::RANDOM => {
-                    render_pass.set_pipeline(&self.mc_render_pipeline);
-                    for (e, bgs) in self.mc_render_bind_groups.iter().enumerate() {
-                        render_pass.set_bind_group(e as u32, &bgs, &[]);
-                    }
-                    render_pass.set_vertex_buffer(0, self.buffers.get(RANDOM_TRIANGLES_BUFFER).unwrap().buffer.slice(..));
-                    render_pass.draw(0..RANDOM_TRIANGLE_COUNT*3, 0..RANDOM_TRIANGLE_COUNT);
+                    let mut rp = self.vertex_buffer_infos.get("random_triangles_vb_info") .unwrap(); // TODO: create this.
+                    self.render_passes.get("mc_renderer_pass")
+                    .unwrap()
+                    .execute(&mut encoder, &frame, &self.multisampled_framebuffer, &self.textures, &self.buffers, &rp, self.sample_count);
                 }
                 Example::RAY_MARCH => {
-                    render_pass.set_pipeline(&self.ray_renderer_pipeline);
-                    for (e, bgs) in self.ray_renderer_bind_groups.iter().enumerate() {
-                        render_pass.set_bind_group(e as u32, &bgs, &[]);
-                    }
-                    render_pass.set_vertex_buffer(0, self.buffers.get("two_triangles_buffer").unwrap().buffer.slice(..));
-                    render_pass.draw(0..6, 0..2);
-                }
+                    let mut rp = self.vertex_buffer_infos.get("two_triangles_vb_info") .unwrap(); // TODO: create this.
+                    self.render_passes.get("ray_renderer_pass")
+                    .unwrap()
+                    .execute(&mut encoder, &frame, &self.multisampled_framebuffer, &self.textures, &self.buffers, &rp, self.sample_count);
+
+                },
                 Example::SPHERE_TRACER => {
-                    render_pass.set_pipeline(&self.ray_renderer_pipeline);
-                    for (e, bgs) in self.ray_renderer_bind_groups.iter().enumerate() {
-                        render_pass.set_bind_group(e as u32, &bgs, &[]);
-                    }
-                    render_pass.set_vertex_buffer(0, self.buffers.get("two_triangles_buffer").unwrap().buffer.slice(..));
-                    render_pass.draw(0..6, 0..2);
-                }
+                    let mut rp = self.vertex_buffer_infos.get("two_triangles_vb_info") .unwrap(); // TODO: create this.
+                    self.render_passes.get("ray_renderer_pass")
+                    .unwrap()
+                    .execute(&mut encoder, &frame, &self.multisampled_framebuffer, &self.textures, &self.buffers, &rp, self.sample_count);
+                },
+
+                //_ => {},
             }
+
+            //    Example::RAY_MARCH => {
+            //        render_pass.set_pipeline(&self.ray_renderer_pipeline);
+            //        for (e, bgs) in self.ray_renderer_bind_groups.iter().enumerate() {
+            //            render_pass.set_bind_group(e as u32, &bgs, &[]);
+            //        }
+            //        render_pass.set_vertex_buffer(0, self.buffers.get("two_triangles_buffer").unwrap().buffer.slice(..));
+            //        render_pass.draw(0..6, 0..2);
+            //    }
+            //    Example::SPHERE_TRACER => {
+            //        render_pass.set_pipeline(&self.ray_renderer_pipeline);
+            //        for (e, bgs) in self.ray_renderer_bind_groups.iter().enumerate() {
+            //            render_pass.set_bind_group(e as u32, &bgs, &[]);
+            //        }
+            //        render_pass.set_vertex_buffer(0, self.buffers.get("two_triangles_buffer").unwrap().buffer.slice(..));
+            //        render_pass.draw(0..6, 0..2);
+            //    }
+            //}
         }
 
         //encoder.finish();
@@ -1803,20 +1952,20 @@ fn create_textures(device: &wgpu::Device, queue: &wgpu::Queue, sc_desc: &wgpu::S
 
     println!("\nCreating textures.\n");
     // Two triangles texture.
-    print!("    * Creating texture from {}.", TWO_TRIANGLES_TEXTURE.source.expect("Missing texture source."));
-    let diffuse_texture = Texture::create_from_bytes(&queue, &device, &sc_desc, sample_count, &include_bytes!("grass2.png")[..], None);
-    textures.insert(TWO_TRIANGLES_TEXTURE.name.to_string(), diffuse_texture);
+    print!("    * Creating texture from {}.", TEXTURES.grass.source.expect("Missing texture source."));
+    let grass_texture = Texture::create_from_bytes(&queue, &device, &sc_desc, sample_count, &include_bytes!("grass2.png")[..], None);
+    textures.insert(TEXTURES.grass.name.to_string(), grass_texture);
     println!(" ... OK'");
 
     // Two triangles texture.
-    print!("    * Creating texture from '{}'", ROCK_TEXTURE.source.expect("Missing texture source."));
+    print!("    * Creating texture from '{}'", TEXTURES.rock.source.expect("Missing texture source."));
     let rock_texture = Texture::create_from_bytes(&queue, &device, &sc_desc, sample_count, &include_bytes!("rock.png")[..], None);
-    textures.insert(ROCK_TEXTURE.name.to_string(), rock_texture);
+    textures.insert(TEXTURES.rock.name.to_string(), rock_texture);
     println!(" ... OK'");
 
     print!("    * Creating depth texture.");
     let depth_texture = Texture::create_depth_texture(&device, &sc_desc, Some("depth-texture"));
-    textures.insert("DEPTH_TEXTURE_NAME".to_string(), depth_texture);
+    textures.insert(TEXTURES.depth.name.to_string(), depth_texture);
     println!(" ... OK'");
       
     print!("    * Creating ray texture.");
