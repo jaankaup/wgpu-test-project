@@ -28,33 +28,70 @@ struct Textures {
     rock: TextureInfo,
     noise3d: TextureInfo,
     depth: TextureInfo,
-    //grass: TextureInfo = TextureInfo { name: "GrassTexture", source: Some("grass1.png"), width: None, height: None, depth: None },
+    ray_texture: TextureInfo,
 }
 
+struct Buffers {
+    camera_uniform_buffer: BufferInfo,
+    ray_camera_uniform_buffer: BufferInfo,
+    mc_uniform_buffer: BufferInfo,
+    mc_counter_buffer: BufferInfo,
+    mc_output_buffer: BufferInfo,
+    ray_march_output_buffer: BufferInfo,
+    ray_debug_buffer: BufferInfo,
+    sphere_tracer_output_buffer: BufferInfo,
+    random_triangle_buffer: BufferInfo,
+    noise_3d_output_buffer: BufferInfo,
+}
+
+static RANDOM_TRIANGLE_COUNT: u32 = 1000;
+
+  
+// Ray camera resolution.
+static CAMERA_RESOLUTION: (u32, u32) = (256,256);
+
+// Noise 3d resolution.
+static N_3D_RES: (u32, u32, u32) = (128,128,128);
+
+// TODO: is noise_3d_output_buffer necessery? Why not save noise directly to noise3d texture
+// (storage texture). 
+
+// TODO: create a simple way to disable unwanted textures and buffers. Maybe each resource could be
+// released and recreated based on the program state. 
+
 static TEXTURES: Textures = Textures {
-    grass: TextureInfo { name: "GrassTexture", source: Some("grass1.png"), width: None, height: None, depth: None },
-    rock: TextureInfo { name: "rock_texture",  source: Some("rock.png"), width: None, height: None, depth: None, },
-    noise3d: TextureInfo { name: "noise_3d_texture",  source: None, width: Some(128), height: Some(128), depth: Some(128), },
-    depth: TextureInfo { name: "depth_texture",  source: None, width: None, height: None, depth: None, },
+    grass:       TextureInfo { name: "GrassTexture",     source: Some("grass1.png"), width: None,                      height: None,                      depth: None, },
+    rock:        TextureInfo { name: "rock_texture",     source: Some("rock.png"),   width: None,                      height: None,                      depth: None, },
+    noise3d:     TextureInfo { name: "noise_3d_texture", source: None,               width: Some(N_3D_RES.0),          height: Some(N_3D_RES.1),          depth: Some(N_3D_RES.2), },
+    depth:       TextureInfo { name: "depth_texture",    source: None,               width: None,                      height: None,                      depth: None, },
+    ray_texture: TextureInfo { name: "ray_texture",      source: None,               width: Some(CAMERA_RESOLUTION.0), height: Some(CAMERA_RESOLUTION.1), depth: Some(1), },
+};
+
+// Size in bytes.
+static BUFFERS:  Buffers = Buffers {                                           
+    camera_uniform_buffer:       BufferInfo { name: "camera_uniform_buffer",     size: None,},
+    ray_camera_uniform_buffer:   BufferInfo { name: "ray_camera_uniform_buffer", size: None,},
+    mc_uniform_buffer:           BufferInfo { name: "mc_uniform_buffer",         size: None,},
+    mc_counter_buffer:           BufferInfo { name: "mc_counter_buffer",         size: None,},
+    mc_output_buffer:            BufferInfo { name: "mc_output_buffer",          size: Some(64*64*64*4), },
+    ray_march_output_buffer:     BufferInfo { name: "ray_march_output",          size: Some(CAMERA_RESOLUTION.0 as u32 * CAMERA_RESOLUTION.1 as u32 * 4),},
+    ray_debug_buffer:            BufferInfo { name: "ray_debug_buffer",          size: Some(CAMERA_RESOLUTION.0 as u32 * CAMERA_RESOLUTION.1 as u32 * 4 * 4),},
+    sphere_tracer_output_buffer: BufferInfo { name: "sphere_tracer_output",      size: Some(CAMERA_RESOLUTION.0 as u32 * CAMERA_RESOLUTION.1 as u32 * 12 * 4),},
+    random_triangle_buffer:      BufferInfo { name: "random_triangle_buffer",    size: None,},
+    noise_3d_output_buffer:      BufferInfo { name: "noise_3d_output_buffer",    size: Some(N_3D_RES.0 * N_3D_RES.1 * N_3D_RES.2 * 4),},
 };
 
 #[derive(Clone, Copy)]
 struct ShaderModuleInfo {
     name: &'static str,
     source_file: &'static str,
-    stage: &'static str, // TODO: enum 
+    stage: &'static str, // TODO: remove? 
 }
 
 enum Resource {
     TextureView(&'static str),
     TextureSampler(&'static str),
     Buffer(&'static str),
-}
-
-// TODO: REMOVE?
-enum PipelineType {
-    Compute(wgpu::ComputePipeline),
-    Render(wgpu::RenderPipeline),
 }
 
 struct VertexBufferInfo {
@@ -160,9 +197,14 @@ struct BindGroupInfo {
 struct TextureInfo {
     name: &'static str,
     source: Option<&'static str>,
-    width: Option<u64>,
-    height: Option<u64>,
-    depth: Option<u64>,
+    width: Option<u32>,
+    height: Option<u32>,
+    depth: Option<u32>,
+}
+
+struct BufferInfo {
+    name: &'static str,
+    size: Option<u32>,
 }
 
 struct RenderPipelineInfo {
@@ -181,37 +223,6 @@ enum PipelineResult {
     Render(Vec<wgpu::BindGroup>, wgpu::RenderPipeline),
     Compute(Vec<wgpu::BindGroup>, wgpu::ComputePipeline),
 }
-
-static CAMERA_UNIFORM_BUFFER_NAME : &'static str = "camera_uniform_buffer";
-static RAY_CAMERA_UNIFORM_BUFFER : &'static str = "ray_camera_uniform_buffer";
-static MC_UNIFORM_BUFFER : &'static str = "mc_uniform_buffer";
-static MC_COUNTER_BUFFER : &'static str = "mc_counter_buffer";
-static MC_OUTPUT_BUFFER : &'static str = "mc_output_buffer";
-static MC_DRAW_BUFFER : &'static str = "mc_draw_buffer";
-static RAY_MARCH_OUTPUT_BUFFER : &'static str = "ray_march_output";
-static RAY_TEXTURE : &'static str = "ray_texture";
-static RAY_DEBUG_BUFFER : &'static str = "ray_debug_buffer";
-static SPHERE_TRACER_OUTPUT_BUFFER : &'static str = "sphere_tracer_output";
-
-static RANDOM_TRIANGLES_BUFFER : &'static str = "random_buffer";
-static RANDOM_TRIANGLE_COUNT: u32 = 1000;
-
-static SPHERE_TRACER_OUTPUT_BUFFER_SIZE: u64 = 256*256*12*4;
-static RAY_MARCH_OUTPUT_BUFFER_SIZE: u64 = 256*256*4;
-
-static NOISE3D_DIMENSION: (u64, u64, u64) = (128,128,128);
-
-static NOISE3DTEXTURE: TextureInfo = TextureInfo {
-    name: "noise_3d_texture",  
-    source: None, // make sure this is loaded before use. 
-    width: Some(NOISE3D_DIMENSION.0),
-    height: Some(NOISE3D_DIMENSION.1),
-    depth: Some(NOISE3D_DIMENSION.2),
-};
-
-static NOISE_OUTPUT_BUFFER : &'static str = "noise_buffer";
-static NOISE_OUTPUT_BUFFER_SIZE: u64 = NOISE3D_DIMENSION.0 * NOISE3D_DIMENSION.1 * NOISE3D_DIMENSION.2 * 4;
-
 
 static TWO_TRIANGLES_SHADERS: [ShaderModuleInfo; 2]  = [
     ShaderModuleInfo {name: "two_triangles_vert", source_file: "two_triangles_vert.spv", stage: "vertex"},
@@ -317,7 +328,7 @@ fn vtn_renderer_info(sample_count: u32) -> RenderPipelineInfo {
                    BindGroupInfo {
                             binding: 0,
                             visibility: wgpu::ShaderStage::VERTEX | wgpu::ShaderStage::FRAGMENT,
-                            resource: Resource::Buffer(CAMERA_UNIFORM_BUFFER_NAME),
+                            resource: Resource::Buffer(BUFFERS.camera_uniform_buffer.name),
                             binding_type: wgpu::BindingType::UniformBuffer {
                                dynamic: false,
                                min_binding_size: None,
@@ -372,7 +383,7 @@ fn ray_renderer_info(sample_count: u32) -> RenderPipelineInfo {
                     BindGroupInfo {
                         binding: 0,
                         visibility: wgpu::ShaderStage::FRAGMENT,
-                        resource: Resource::TextureView(RAY_TEXTURE),
+                        resource: Resource::TextureView(TEXTURES.ray_texture.name),
                         binding_type: wgpu::BindingType::SampledTexture {
                            multisampled: multisampled(sample_count),
                            component_type: wgpu::TextureComponentType::Uint,
@@ -383,7 +394,7 @@ fn ray_renderer_info(sample_count: u32) -> RenderPipelineInfo {
                     BindGroupInfo {
                         binding: 1,
                         visibility: wgpu::ShaderStage::FRAGMENT,
-                        resource: Resource::TextureSampler(RAY_TEXTURE),
+                        resource: Resource::TextureSampler(TEXTURES.ray_texture.name),
                         binding_type: wgpu::BindingType::Sampler {
                            comparison: false,
                         },
@@ -417,7 +428,7 @@ fn mc_renderer_info(sample_count: u32) -> RenderPipelineInfo {
                    BindGroupInfo {
                             binding: 0,
                             visibility: wgpu::ShaderStage::VERTEX | wgpu::ShaderStage::FRAGMENT,
-                            resource: Resource::Buffer(CAMERA_UNIFORM_BUFFER_NAME),
+                            resource: Resource::Buffer(BUFFERS.camera_uniform_buffer.name),
                             binding_type: wgpu::BindingType::UniformBuffer {
                                dynamic: false,
                                min_binding_size: None,
@@ -467,7 +478,7 @@ fn marching_cubes_info() -> ComputePipelineInfo {
                    BindGroupInfo {
                             binding: 0,
                             visibility: wgpu::ShaderStage::COMPUTE,
-                            resource: Resource::Buffer(MC_UNIFORM_BUFFER),
+                            resource: Resource::Buffer(BUFFERS.mc_uniform_buffer.name),
                             binding_type: wgpu::BindingType::UniformBuffer {
                                dynamic: false,
                                min_binding_size: None,
@@ -476,7 +487,7 @@ fn marching_cubes_info() -> ComputePipelineInfo {
                    BindGroupInfo {
                             binding: 1,
                             visibility: wgpu::ShaderStage::COMPUTE,
-                            resource: Resource::Buffer(MC_COUNTER_BUFFER),
+                            resource: Resource::Buffer(BUFFERS.mc_counter_buffer.name),
                             binding_type: wgpu::BindingType::StorageBuffer {
                                dynamic: false,
                                readonly: false,
@@ -486,7 +497,7 @@ fn marching_cubes_info() -> ComputePipelineInfo {
                    BindGroupInfo {
                             binding: 2,
                             visibility: wgpu::ShaderStage::COMPUTE,
-                            resource: Resource::Buffer(MC_OUTPUT_BUFFER),
+                            resource: Resource::Buffer(BUFFERS.mc_output_buffer.name),
                             binding_type: wgpu::BindingType::StorageBuffer {
                                dynamic: false,
                                readonly: false,
@@ -513,7 +524,7 @@ fn ray_march_info(sample_count: u32) -> ComputePipelineInfo {
                    BindGroupInfo {
                         binding: 0,
                         visibility: wgpu::ShaderStage::COMPUTE,
-                        resource: Resource::Buffer(RAY_CAMERA_UNIFORM_BUFFER),
+                        resource: Resource::Buffer(BUFFERS.ray_camera_uniform_buffer.name),
                         binding_type: wgpu::BindingType::UniformBuffer {
                            dynamic: false,
                            min_binding_size: None, // wgpu::BufferSize::new(std::mem::size_of::<RayCameraUniform>() as u64) * 4,
@@ -546,7 +557,7 @@ fn ray_march_info(sample_count: u32) -> ComputePipelineInfo {
                    BindGroupInfo {
                         binding: 0,
                         visibility: wgpu::ShaderStage::COMPUTE,
-                        resource: Resource::Buffer(RAY_MARCH_OUTPUT_BUFFER),
+                        resource: Resource::Buffer(BUFFERS.ray_march_output_buffer.name),
                         binding_type: wgpu::BindingType::StorageBuffer {
                            dynamic: false, //true,
                            readonly: false,
@@ -558,11 +569,11 @@ fn ray_march_info(sample_count: u32) -> ComputePipelineInfo {
                    BindGroupInfo {
                         binding: 0,
                         visibility: wgpu::ShaderStage::COMPUTE,
-                        resource: Resource::Buffer(RAY_DEBUG_BUFFER),
+                        resource: Resource::Buffer(BUFFERS.ray_debug_buffer.name),
                         binding_type: wgpu::BindingType::StorageBuffer {
                            dynamic: false, //true,
                            readonly: false,
-                           min_binding_size: wgpu::BufferSize::new(256*256*4*4),
+                           min_binding_size: wgpu::BufferSize::new(BUFFERS.ray_debug_buffer.size.unwrap().into()),
                         },
                    }, 
                ],
@@ -585,7 +596,7 @@ fn sphere_tracer_info(sample_count: u32) -> ComputePipelineInfo {
                    BindGroupInfo {
                         binding: 0,
                         visibility: wgpu::ShaderStage::COMPUTE,
-                        resource: Resource::Buffer(RAY_CAMERA_UNIFORM_BUFFER),
+                        resource: Resource::Buffer(BUFFERS.ray_camera_uniform_buffer.name),
                         binding_type: wgpu::BindingType::UniformBuffer {
                            dynamic: false,
                            min_binding_size: None, //wgpu::BufferSize::new(std::mem::size_of::<RayCameraUniform>() as u64) * 4,
@@ -652,7 +663,7 @@ fn sphere_tracer_info(sample_count: u32) -> ComputePipelineInfo {
                    BindGroupInfo {
                         binding: 4,
                         visibility: wgpu::ShaderStage::COMPUTE,
-                        resource: Resource::TextureView(NOISE3DTEXTURE.name), // TODO: create texture.
+                        resource: Resource::TextureView(TEXTURES.noise3d.name), // TODO: create texture.
                         binding_type: wgpu::BindingType::SampledTexture {
                            multisampled: false,
                            component_type: wgpu::TextureComponentType::Float,
@@ -662,7 +673,7 @@ fn sphere_tracer_info(sample_count: u32) -> ComputePipelineInfo {
                    BindGroupInfo {
                        binding: 5,
                        visibility: wgpu::ShaderStage::COMPUTE,
-                       resource: Resource::TextureSampler(NOISE3DTEXTURE.name),
+                       resource: Resource::TextureSampler(TEXTURES.noise3d.name),
                        binding_type: wgpu::BindingType::Sampler {
                           comparison: false,
                        },
@@ -670,7 +681,7 @@ fn sphere_tracer_info(sample_count: u32) -> ComputePipelineInfo {
                    //BindGroupInfo {
                    //     binding: 5,
                    //     visibility: wgpu::ShaderStage::COMPUTE,
-                   //     resource: Resource::TextureView(NOISE3DTEXTURE.name),
+                   //     resource: Resource::TextureView(TEXTURES.noise3d.name),
                    //     binding_type: wgpu::BindingType::SampledTexture {
                    //        multisampled: false,
                    //        component_type: wgpu::TextureComponentType::Float,
@@ -682,11 +693,11 @@ fn sphere_tracer_info(sample_count: u32) -> ComputePipelineInfo {
                    BindGroupInfo {
                         binding: 0,
                         visibility: wgpu::ShaderStage::COMPUTE,
-                        resource: Resource::Buffer(SPHERE_TRACER_OUTPUT_BUFFER),
+                        resource: Resource::Buffer(BUFFERS.sphere_tracer_output_buffer.name),
                         binding_type: wgpu::BindingType::StorageBuffer {
                            dynamic: false,
                            readonly: false,
-                           min_binding_size: wgpu::BufferSize::new(SPHERE_TRACER_OUTPUT_BUFFER_SIZE),
+                           min_binding_size: wgpu::BufferSize::new(BUFFERS.sphere_tracer_output_buffer.size.unwrap().into()),
                         },
                    },
                ],
@@ -694,11 +705,11 @@ fn sphere_tracer_info(sample_count: u32) -> ComputePipelineInfo {
                    BindGroupInfo {
                         binding: 0,
                         visibility: wgpu::ShaderStage::COMPUTE,
-                        resource: Resource::Buffer(RAY_MARCH_OUTPUT_BUFFER),
+                        resource: Resource::Buffer(BUFFERS.ray_march_output_buffer.name),
                         binding_type: wgpu::BindingType::StorageBuffer {
                            dynamic: false,
                            readonly: false,
-                           min_binding_size: wgpu::BufferSize::new(RAY_MARCH_OUTPUT_BUFFER_SIZE),
+                           min_binding_size: wgpu::BufferSize::new(BUFFERS.ray_march_output_buffer.size.unwrap() as u64),
                         },
                    },
                ],
@@ -721,17 +732,20 @@ fn generate_noise3d_info() -> ComputePipelineInfo {
                    BindGroupInfo {
                         binding: 0,
                         visibility: wgpu::ShaderStage::COMPUTE,
-                        //resource: Resource::TextureView(NOISE3DTEXTURE.name), // TODO: create
+                        //resource: Resource::TextureView(TEXTURES.noise3d.name), // TODO: create
 //                        binding_type: wgpu::BindingType::StorageTexture {
 //                            dimension: wgpu::TextureViewDimension::D3,
 //                            format: wgpu::TextureFormat::Bgra8UnormSrgb,
 //                            readonly: false,
 //                        },
-                        resource: Resource::Buffer(NOISE_OUTPUT_BUFFER),
+                        resource: Resource::Buffer(BUFFERS.noise_3d_output_buffer.name),
                         binding_type: wgpu::BindingType::StorageBuffer {
                            dynamic: false,
                            readonly: false,
-                           min_binding_size: wgpu::BufferSize::new(NOISE_OUTPUT_BUFFER_SIZE),
+                           min_binding_size:
+                                wgpu::BufferSize::new(
+                                    (TEXTURES.noise3d.width.unwrap() * TEXTURES.noise3d.height.unwrap() * TEXTURES.noise3d.depth.unwrap() * 4).into()
+                                ),
                         },
                    },
                ],
@@ -1058,7 +1072,7 @@ impl State {
             wgpu::BufferUsage::UNIFORM | wgpu::BufferUsage::COPY_DST,
             None);
 
-        buffers.insert(CAMERA_UNIFORM_BUFFER_NAME.to_string(), camera_buffer);
+        buffers.insert(BUFFERS.camera_uniform_buffer.name.to_string(), camera_buffer);
 
         // The ray camera.
         let mut ray_camera = RayCamera {
@@ -1095,7 +1109,7 @@ impl State {
             wgpu::BufferUsage::UNIFORM | wgpu::BufferUsage::COPY_DST,
             None);
 
-        buffers.insert(RAY_CAMERA_UNIFORM_BUFFER.to_string(), ray_camera_buffer);
+        buffers.insert(BUFFERS.ray_camera_uniform_buffer.name.to_string(), ray_camera_buffer);
 
         let mut render_passes: HashMap<String, RenderPass> = HashMap::new();
         let mut compute_passes: HashMap<String, ComputePass> = HashMap::new();
@@ -1209,7 +1223,7 @@ impl State {
                         sample_count);
 
         let mc_renderer_vb_info = VertexBufferInfo {
-            vertex_buffer_name: MC_OUTPUT_BUFFER.to_string(),
+            vertex_buffer_name: BUFFERS.mc_output_buffer.name.to_string(),
             index_buffer: None,
             start_index: 0,
             end_index: 0,
@@ -1218,7 +1232,7 @@ impl State {
 
         // TODO: move this somewhere else.
         let random_triangles_vb_info = VertexBufferInfo {
-            vertex_buffer_name: RANDOM_TRIANGLES_BUFFER.to_string(),
+            vertex_buffer_name: BUFFERS.random_triangle_buffer.name.to_string(),
             index_buffer: None,
             start_index: 0,
             end_index: RANDOM_TRIANGLE_COUNT*3,
@@ -1315,9 +1329,9 @@ impl State {
         let noise_3d_pass = ComputePass {
             pipeline: noise3d_compute_pipeline,
             bind_groups: noise3d_bind_groups,
-            dispatch_x: NOISE3D_DIMENSION.0 as u32 / 4,
-            dispatch_y: NOISE3D_DIMENSION.1 as u32 / 4,
-            dispatch_z: NOISE3D_DIMENSION.2 as u32 / 4,
+            dispatch_x: TEXTURES.noise3d.width.unwrap() as u32 / 4,
+            dispatch_y: TEXTURES.noise3d.height.unwrap() as u32 / 4,
+            dispatch_z: TEXTURES.noise3d.depth.unwrap() as u32 / 4,
         };
 
         compute_passes.insert("noise_3d_pass".to_string(), noise_3d_pass);
@@ -1332,13 +1346,13 @@ impl State {
                       .unwrap()
                       .execute(&mut noise_encoder);
 
-        let noise_texture_dimension_x = NOISE3DTEXTURE.width.expect("Consider giving NOISE3DTEXTURE a width.") as u32;
-        let noise_texture_dimension_y = NOISE3DTEXTURE.height.expect("Consider giving NOISE3DTEXTURE a height.") as u32;
-        let noise_texture_dimension_z = NOISE3DTEXTURE.depth.expect("Consider giving NOISE3DTEXTURE a depth.") as u32;
+        let noise_texture_dimension_x = TEXTURES.noise3d.width.expect("Consider giving TEXTURES.noise3d a width.") as u32;
+        let noise_texture_dimension_y = TEXTURES.noise3d.height.expect("Consider giving TEXTURES.noise3d a height.") as u32;
+        let noise_texture_dimension_z = TEXTURES.noise3d.depth.expect("Consider giving TEXTURES.noise3d a depth.") as u32;
 
         noise_encoder.copy_buffer_to_texture(
             wgpu::BufferCopyView {
-                buffer: &buffers.get(NOISE_OUTPUT_BUFFER).unwrap().buffer,
+                buffer: &buffers.get(BUFFERS.noise_3d_output_buffer.name).unwrap().buffer,
                 layout: wgpu::TextureDataLayout {
                     offset: 0,
                     bytes_per_row: noise_texture_dimension_x * 4, // 16 
@@ -1346,7 +1360,7 @@ impl State {
                 },
             },
             wgpu::TextureCopyView{
-                texture: &textures.get(NOISE3DTEXTURE.name).unwrap().texture,
+                texture: &textures.get(TEXTURES.noise3d.name).unwrap().texture,
                 mip_level: 0,
                 origin: wgpu::Origin3d::ZERO,
             },
@@ -1358,7 +1372,7 @@ impl State {
 
         queue.submit(Some(noise_encoder.finish()));
 
-//        let noise_output = &textures.get(NOISE3DTEXTURE.name).unwrap().to_vec::<u8>(&device, &queue).await;
+//        let noise_output = &textures.get(TEXTURES.noise3d.name).unwrap().to_vec::<u8>(&device, &queue).await;
 //        for i in 0..1024 {
 //            println!("{}", noise_output[i]);
 //        }
@@ -1395,7 +1409,7 @@ impl State {
 
         //sphere_encoder.copy_buffer_to_texture(
         //    wgpu::BufferCopyView {
-        //        buffer: &buffers.get(RAY_MARCH_OUTPUT_BUFFER).unwrap().buffer,
+        //        buffer: &buffers.get(BUFFERS.ray_march_output_buffer.name).unwrap().buffer,
         //        layout: wgpu::TextureDataLayout {
         //            offset: 0,
         //            bytes_per_row: 256 * 4, //bits_per_pixel * width ,
@@ -1404,7 +1418,7 @@ impl State {
         //        },
         //    },
         //    wgpu::TextureCopyView{
-        //        texture: &textures.get(RAY_TEXTURE).unwrap().texture,
+        //        texture: &textures.get(TEXTURES.ray_texture).unwrap().texture,
         //        mip_level: 0,
         //        origin: wgpu::Origin3d::ZERO,
         //    },
@@ -1416,7 +1430,7 @@ impl State {
 
         //queue.submit(Some(sphere_encoder.finish()));
 
-        // let sphere_output = &buffers.get(SPHERE_TRACER_OUTPUT_BUFFER).unwrap().to_vec::<f32>(&device, &queue, true).await;
+        // let sphere_output = &buffers.get(BUFFERS.sphere_tracer_output_buffer.name).unwrap().to_vec::<f32>(&device, &queue, true).await;
         // for i in 0..256*256 {
         //     let offset = i*12;
         //     println!("{} :: origin: ({}, {}, {}, {})", i, sphere_output[offset], sphere_output[offset+1], sphere_output[offset+2], sphere_output[offset+3]);
@@ -1434,11 +1448,9 @@ impl State {
                       .unwrap()
                       .execute(&mut mc_encoder);
 
-        mc_encoder.copy_buffer_to_buffer(&buffers.get(MC_OUTPUT_BUFFER).unwrap().buffer, 0, &buffers.get(MC_DRAW_BUFFER).unwrap().buffer, 0, 4 * 64*64*64);
-
         queue.submit(Some(mc_encoder.finish()));
 
-        let k = &buffers.get(MC_COUNTER_BUFFER).unwrap().to_vec::<u32>(&device, &queue, true).await;
+        let k = &buffers.get(BUFFERS.mc_counter_buffer.name).unwrap().to_vec::<u32>(&device, &queue, true).await;
         let mc_vertex_count = k[0];
         {
             let mut rp = vertex_buffer_infos.get_mut("mc_renderer_vb_info") .unwrap();
@@ -1513,13 +1525,13 @@ impl State {
 
         // TODO: Create a method for this in Buffer.
         self.queue.write_buffer(
-            &self.buffers.get(CAMERA_UNIFORM_BUFFER_NAME).unwrap().buffer,
+            &self.buffers.get(BUFFERS.camera_uniform_buffer.name).unwrap().buffer,
             0,
             bytemuck::cast_slice(&[self.camera_uniform])
         );
 
         self.queue.write_buffer(
-            &self.buffers.get(RAY_CAMERA_UNIFORM_BUFFER).unwrap().buffer,
+            &self.buffers.get(BUFFERS.ray_camera_uniform_buffer.name).unwrap().buffer,
             0,
             bytemuck::cast_slice(&[self.ray_camera_uniform])
         );
@@ -1543,7 +1555,7 @@ impl State {
 
                     encoder.copy_buffer_to_texture(
                         wgpu::BufferCopyView {
-                            buffer: &self.buffers.get(RAY_MARCH_OUTPUT_BUFFER).unwrap().buffer,
+                            buffer: &self.buffers.get(BUFFERS.ray_march_output_buffer.name).unwrap().buffer,
                             layout: wgpu::TextureDataLayout {
                                 offset: 0,
                                 bytes_per_row: 256 * 4, //bits_per_pixel * width ,
@@ -1551,14 +1563,14 @@ impl State {
                             },
                         },
                         wgpu::TextureCopyView{
-                            texture: &self.textures.get(RAY_TEXTURE).unwrap().texture,
+                            texture: &self.textures.get(TEXTURES.ray_texture.name).unwrap().texture,
                             mip_level: 0,
                             origin: wgpu::Origin3d::ZERO,
                         },
                         wgpu::Extent3d {
-                            width: 256,
-                            height: 256,
-                            depth: 1,
+                            width: TEXTURES.ray_texture.width.unwrap() as u32,
+                            height: TEXTURES.ray_texture.height.unwrap() as u32,
+                            depth: TEXTURES.ray_texture.depth.unwrap() as u32,
                     });
                 },
 
@@ -1571,7 +1583,7 @@ impl State {
 
                     encoder.copy_buffer_to_texture(
                         wgpu::BufferCopyView { 
-                            buffer: &self.buffers.get(RAY_MARCH_OUTPUT_BUFFER).unwrap().buffer,
+                            buffer: &self.buffers.get(BUFFERS.ray_march_output_buffer.name).unwrap().buffer,
                             layout: wgpu::TextureDataLayout {
                                 offset: 0,
                                 bytes_per_row: 256 * 4, //bits_per_pixel * width ,
@@ -1579,7 +1591,7 @@ impl State {
                             },
                         },
                         wgpu::TextureCopyView{
-                            texture: &self.textures.get(RAY_TEXTURE).unwrap().texture,
+                            texture: &self.textures.get(TEXTURES.ray_texture.name).unwrap().texture,
                             mip_level: 0,
                             origin: wgpu::Origin3d::ZERO,
                         },
@@ -1777,20 +1789,20 @@ fn create_vertex_buffers(device: &wgpu::Device, buffers: &mut HashMap::<String, 
 
     println!(" ... OK'");
 
-    print!("    * Creating marching cubes output buffer as '{}'", MC_OUTPUT_BUFFER);
+    print!("    * Creating marching cubes output buffer as '{}'", BUFFERS.mc_output_buffer.name);
 
     let marching_cubes_output = Buffer::create_buffer_from_data::<f32>(
         device,
-        &vec![0 as f32 ; 64*64*64],
+        &vec![0 as f32 ; BUFFERS.mc_output_buffer.size.unwrap() as usize / 4],
         wgpu::BufferUsage::STORAGE | wgpu::BufferUsage::COPY_DST |wgpu::BufferUsage::COPY_SRC | wgpu::BufferUsage::VERTEX,
         None
     );
 
-    buffers.insert(MC_OUTPUT_BUFFER.to_string(), marching_cubes_output);
+    buffers.insert(BUFFERS.mc_output_buffer.name.to_string(), marching_cubes_output);
 
     println!(" ... OK'");
 
-    print!("    * Creating marching cubes counter buffer as '{}'", MC_COUNTER_BUFFER);
+    print!("    * Creating marching cubes counter buffer as '{}'", BUFFERS.mc_counter_buffer.name);
 
     let marching_cubes_counter = Buffer::create_buffer_from_data::<u32>(
         device,
@@ -1799,11 +1811,11 @@ fn create_vertex_buffers(device: &wgpu::Device, buffers: &mut HashMap::<String, 
         None
     );
 
-    buffers.insert(MC_COUNTER_BUFFER.to_string(), marching_cubes_counter);
+    buffers.insert(BUFFERS.mc_counter_buffer.name.to_string(), marching_cubes_counter);
 
     println!(" ... OK'");
 
-    print!("    * Creating marching cubes uniform buffer as '{}'", MC_UNIFORM_BUFFER);
+    print!("    * Creating marching cubes uniform buffer as '{}'", BUFFERS.mc_uniform_buffer.name);
 
     let mc_u_data = Mc_uniform_data {
         isovalue: 0.0,
@@ -1818,20 +1830,9 @@ fn create_vertex_buffers(device: &wgpu::Device, buffers: &mut HashMap::<String, 
         None
     );
 
-    buffers.insert(MC_UNIFORM_BUFFER.to_string(), marching_cubes_uniform_buffer);
+    buffers.insert(BUFFERS.mc_uniform_buffer.name.to_string(), marching_cubes_uniform_buffer);
 
     println!(" ... OK'");
-
-    print!("    * Creating marching cubes draw buffer as '{}'", MC_DRAW_BUFFER);
-
-    let marching_cubes_draw_buffer = Buffer::create_buffer_from_data::<f32>(
-        device,
-        &vec![0 as f32 ; 64*64*64],
-        wgpu::BufferUsage::COPY_SRC | wgpu::BufferUsage::COPY_DST | wgpu::BufferUsage::VERTEX,
-        None
-    );
-
-    buffers.insert(MC_DRAW_BUFFER.to_string(), marching_cubes_draw_buffer);
 
     let mut rng = thread_rng();
     let mut random_triangles = Vec::new();
@@ -1892,57 +1893,59 @@ fn create_vertex_buffers(device: &wgpu::Device, buffers: &mut HashMap::<String, 
         None
     );
 
-    buffers.insert(RANDOM_TRIANGLES_BUFFER.to_string(), random_triangles_buffer);
+    buffers.insert(BUFFERS.random_triangle_buffer.name.to_string(), random_triangles_buffer);
 
     println!(" ... OK'");
 
-    print!("    * Creating ray march output buffer as '{}'", RAY_MARCH_OUTPUT_BUFFER);
+    print!("    * Creating ray march output buffer as '{}'", BUFFERS.ray_march_output_buffer.name);
 
     let ray_march_output = Buffer::create_buffer_from_data::<u32>(
         device,
-        &vec![0 as u32 ; (RAY_MARCH_OUTPUT_BUFFER_SIZE/4) as usize],
+        &vec![0 as u32 ; (BUFFERS.ray_march_output_buffer.size.unwrap() / 4) as usize],
         wgpu::BufferUsage::STORAGE | wgpu::BufferUsage::COPY_DST | wgpu::BufferUsage::COPY_SRC,
         None
     );
 
-    buffers.insert(RAY_MARCH_OUTPUT_BUFFER.to_string(), ray_march_output);
+    buffers.insert(BUFFERS.ray_march_output_buffer.name.to_string(), ray_march_output);
     println!(" ... OK'");
     
-    print!("    * Creating ray march output buffer as '{}'", RAY_DEBUG_BUFFER);
+    print!("    * Creating ray march output buffer as '{}'", BUFFERS.ray_debug_buffer.name);
 
     let ray_march_debug = Buffer::create_buffer_from_data::<u32>(
         device,
-        &vec![0 as u32 ; 256*256*4],
+        &vec![0 as u32 ; BUFFERS.ray_debug_buffer.size.unwrap() as usize / 4],
         wgpu::BufferUsage::STORAGE | wgpu::BufferUsage::COPY_DST | wgpu::BufferUsage::COPY_SRC,
         None
     );
 
-    buffers.insert(RAY_DEBUG_BUFFER.to_string(), ray_march_debug);
+    buffers.insert(BUFFERS.ray_debug_buffer.name.to_string(), ray_march_debug);
 
     println!(" ... OK'");
 
-    print!("    * Creating sphere_output_buffer buffer as '{}'", SPHERE_TRACER_OUTPUT_BUFFER);
+    print!("    * Creating sphere_output_buffer buffer as '{}'", BUFFERS.sphere_tracer_output_buffer.name);
 
     let sphere_output_buffer = Buffer::create_buffer_from_data::<f32>(
         device,
-        &vec![0 as f32 ; (SPHERE_TRACER_OUTPUT_BUFFER_SIZE/4) as usize],
+        &vec![0 as f32 ; (BUFFERS.sphere_tracer_output_buffer.size.unwrap() / 4) as usize],
         wgpu::BufferUsage::STORAGE | wgpu::BufferUsage::COPY_DST | wgpu::BufferUsage::COPY_SRC,
         None
     );
 
-    buffers.insert(SPHERE_TRACER_OUTPUT_BUFFER.to_string(), sphere_output_buffer);
+    buffers.insert(BUFFERS.sphere_tracer_output_buffer.name.to_string(), sphere_output_buffer);
     println!(" ... OK'");
 
-    print!("    * Creating noise output buffer as '{}'", NOISE_OUTPUT_BUFFER);
+    print!("    * Creating noise output buffer as '{}'", BUFFERS.noise_3d_output_buffer.name);
+
+//    let size = TEXTURES.noise3d.width.unwrap() * TEXTURES.noise3d.height.unwrap() * TEXTURES.noise3d.depth.unwrap(); 
 
     let noise_output_buffer = Buffer::create_buffer_from_data::<f32>(
         device,
-        &vec![0 as f32 ; (NOISE_OUTPUT_BUFFER_SIZE/4) as usize], // TODO: implement buffer creation without data.
+        &vec![0 as f32 ; BUFFERS.noise_3d_output_buffer.size.unwrap() as usize / 4],
         wgpu::BufferUsage::STORAGE | wgpu::BufferUsage::COPY_DST | wgpu::BufferUsage::COPY_SRC,
         None
     );
 
-    buffers.insert(NOISE_OUTPUT_BUFFER.to_string(), noise_output_buffer);
+    buffers.insert(BUFFERS.noise_3d_output_buffer.name.to_string(), noise_output_buffer);
     println!(" ... OK'");
 
     println!("");
@@ -1970,21 +1973,21 @@ fn create_textures(device: &wgpu::Device, queue: &wgpu::Queue, sc_desc: &wgpu::S
       
     print!("    * Creating ray texture.");
     let ray_texture = gradu::Texture::create_texture2D(&queue, &device, &sc_desc, sample_count, 256, 256);
-    textures.insert(RAY_TEXTURE.to_string(), ray_texture);
+    textures.insert(TEXTURES.ray_texture.name.to_string(), ray_texture);
     println!(" ... OK'");
 
-    print!("    * Creating {} texture.", NOISE3DTEXTURE.name);
+    print!("    * Creating {} texture.", TEXTURES.noise3d.name);
     let noise3dtexture = gradu::Texture::create_texture3D(
         &queue,
         &device,
         &sc_desc, // TODO: choose which one to use.
         //&wgpu::TextureFormat::Rgba32Float,//&sc_desc.format, // ,,,,,,,,,,,,,,,,,,
         &sc_desc.format,
-        NOISE3DTEXTURE.width.unwrap() as u32,
-        NOISE3DTEXTURE.height.unwrap() as u32,
-        NOISE3DTEXTURE.depth.unwrap() as u32,
+        TEXTURES.noise3d.width.unwrap() as u32,
+        TEXTURES.noise3d.height.unwrap() as u32,
+        TEXTURES.noise3d.depth.unwrap() as u32,
     );
-    textures.insert(NOISE3DTEXTURE.name.to_string(), noise3dtexture);
+    textures.insert(TEXTURES.noise3d.name.to_string(), noise3dtexture);
     println!(" ... OK'");
 
 }
