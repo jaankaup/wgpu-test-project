@@ -1,10 +1,8 @@
 use std::collections::HashMap;
-use std::io::prelude::*;
-use bytemuck::{Pod, Zeroable};
 use rand::prelude::*;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use cgmath::{prelude::*, Vector3, Vector4, Point3};
+use cgmath::{prelude::*, Vector3};
 
 use winit::{
     event::{Event, WindowEvent,KeyboardInput,ElementState,VirtualKeyCode},
@@ -17,10 +15,10 @@ use gradu::{Camera, RayCamera, CameraController, CameraUniform, Buffer, create_c
 enum Example {
     TwoTriangles,
     Cube,
-    MC,
-    RANDOM,
-    RAY_MARCH,
-    SPHERE_TRACER,
+    Mc,
+    Random,
+    VolumetricNoise,
+    Volumetric3dTexture,
 }
 
 struct Textures {
@@ -219,15 +217,10 @@ struct ComputePipelineInfo {
     bind_groups: Vec<Vec<BindGroupInfo>>,
 }
 
-enum PipelineResult {
-    Render(Vec<wgpu::BindGroup>, wgpu::RenderPipeline),
-    Compute(Vec<wgpu::BindGroup>, wgpu::ComputePipeline),
-}
-
-static TWO_TRIANGLES_SHADERS: [ShaderModuleInfo; 2]  = [
-    ShaderModuleInfo {name: "two_triangles_vert", source_file: "two_triangles_vert.spv", stage: "vertex"},
-    ShaderModuleInfo {name: "two_triangles_frag", source_file: "two_triangles_frag.spv", stage: "frag"},
-];
+// static TWO_TRIANGLES_SHADERS: [ShaderModuleInfo; 2]  = [
+//     ShaderModuleInfo {name: "two_triangles_vert", source_file: "two_triangles_vert.spv", stage: "vertex"},
+//     ShaderModuleInfo {name: "two_triangles_frag", source_file: "two_triangles_frag.spv", stage: "frag"},
+// ];
 
 static VTN_SHADERS: [ShaderModuleInfo; 2]  = [
     ShaderModuleInfo {name: "vtn_render_vert", source_file: "vtn_render_vert.spv", stage: "vertex"},
@@ -895,7 +888,6 @@ fn create_render_pipeline_and_bind_groups(device: &wgpu::Device,
 }
 
 fn create_compute_pipeline_and_bind_groups(device: &wgpu::Device,
-                                           sc_desc: &wgpu::SwapChainDescriptor,
                                            shaders: &HashMap<String, wgpu::ShaderModule>,
                                            textures: &HashMap<String, gradu::Texture>,
                                            buffers: &HashMap<String, gradu::Buffer>,
@@ -977,9 +969,6 @@ pub struct State {
     swap_chain: wgpu::SwapChain,
     size: winit::dpi::PhysicalSize<u32>,
     buffers: HashMap<String,gradu::Buffer>,
-    bind_groups: HashMap<String,wgpu::BindGroup>,
-    render_pipelines: HashMap<String,wgpu::RenderPipeline>,
-    compute_pipelines: HashMap<String,wgpu::ComputePipeline>,
     textures: HashMap<String,gradu::Texture>,
     camera: Camera,
     ray_camera: RayCamera,
@@ -1032,16 +1021,6 @@ impl State {
         let mut buffers = HashMap::new();
         create_vertex_buffers(&device, &mut buffers);
         
-        // Storage for bind groups.
-        let mut bind_groups: HashMap<String,wgpu::BindGroup> = HashMap::new();
-
-        // Storage for render pipelines.
-        let mut render_pipelines = HashMap::new();
-
-        // Storage for compute pipelines.
-        let mut compute_pipelines = HashMap::new();
-
-
         // The camera.
         let mut camera = Camera {
             pos: (1.0, 1.0, 1.0).into(),
@@ -1080,8 +1059,8 @@ impl State {
             view: Vector3::new(0.0, 0.0, -1.0).normalize(),
             up: cgmath::Vector3::unit_y(),
             fov: ((45.0 as f32).to_radians(), (45.0 as f32).to_radians()).into(),
-            apertureRadius: 1.0, // this is only used in path tracing.
-            focalDistance: 1.0, // camera distance to the camera screen.
+            aperture_radius: 1.0, // this is only used in path tracing.
+            focal_distance: 1.0, // camera distance to the camera screen.
         };
 
         // TODO: REMOVE?
@@ -1138,12 +1117,12 @@ impl State {
 
         vertex_buffer_infos.insert("two_triangles_vb_info".to_string(), two_triangles_vb_info);
 
-        let twoTriangles = RenderPass {
+        let two_triangles = RenderPass {
             pipeline: two_triangles_render_pipeline,
             bind_groups: two_triangles_bind_groups,
         };
 
-        render_passes.insert("two_triangles_render_pass".to_string(), twoTriangles);
+        render_passes.insert("two_triangles_render_pass".to_string(), two_triangles);
 
         /* CUBE */
 
@@ -1255,7 +1234,6 @@ impl State {
         let mc_compute_info = marching_cubes_info();
         let (mc_compute_bind_groups, mc_compute_pipeline) = create_compute_pipeline_and_bind_groups(
                         &device,
-                        &sc_desc,
                         &shaders,
                         &textures,
                         &buffers,
@@ -1277,7 +1255,6 @@ impl State {
         let volume_noise_info = ray_march_info(sample_count); // TODO: rename info function.
         let (volume_noise_bind_groups, volume_noise_compute_pipeline) = create_compute_pipeline_and_bind_groups(
                         &device,
-                        &sc_desc,
                         &shaders,
                         &textures,
                         &buffers,
@@ -1298,7 +1275,6 @@ impl State {
         let volume_3d_info = sphere_tracer_info(sample_count); // TODO: rename info function.
         let (volume_3d_bind_groups, volume_3d_compute_pipeline) = create_compute_pipeline_and_bind_groups(
                         &device,
-                        &sc_desc,
                         &shaders,
                         &textures,
                         &buffers,
@@ -1320,7 +1296,6 @@ impl State {
         let noise3d_info = generate_noise3d_info();
         let (noise3d_bind_groups, noise3d_compute_pipeline) = create_compute_pipeline_and_bind_groups(
                         &device,
-                        &sc_desc,
                         &shaders,
                         &textures,
                         &buffers,
@@ -1450,7 +1425,7 @@ impl State {
 
         queue.submit(Some(mc_encoder.finish()));
 
-        let k = &buffers.get(BUFFERS.mc_counter_buffer.name).unwrap().to_vec::<u32>(&device, &queue, true).await;
+        let k = &buffers.get(BUFFERS.mc_counter_buffer.name).unwrap().to_vec::<u32>(&device, &queue).await;
         let mc_vertex_count = k[0];
         {
             let mut rp = vertex_buffer_infos.get_mut("mc_renderer_vb_info") .unwrap();
@@ -1468,9 +1443,6 @@ impl State {
             swap_chain,
             size,
             buffers,
-            bind_groups,
-            render_pipelines,
-            compute_pipelines,
             camera,
             ray_camera, 
             camera_controller,
@@ -1517,7 +1489,7 @@ impl State {
         let time_delta = time_now - self.time_counter;
 
         self.time_counter = time_now;
-        self.ray_camera.apertureRadius = self.ray_camera.apertureRadius + 36.0 * ((time_delta as f32) * 0.0000000001).sin();
+        self.ray_camera.aperture_radius = self.ray_camera.aperture_radius + 36.0 * ((time_delta as f32) * 0.0000000001).sin();
 //        println!("{}", self.ray_camera.apertureRadius);
 
         self.camera_uniform.update_view_proj(&self.camera);
@@ -1547,7 +1519,7 @@ impl State {
 
         match self.example {
 
-                Example::RAY_MARCH => {
+                Example::VolumetricNoise => {
 
                     self.compute_passes.get("volume_noise_pass")
                     .unwrap()
@@ -1575,7 +1547,7 @@ impl State {
                 },
 
                 // Launch sprhere tracer.
-                Example::SPHERE_TRACER => {
+                Example::Volumetric3dTexture => {
 
                     self.compute_passes.get("volume_3d_pass")
                     .unwrap()
@@ -1604,8 +1576,6 @@ impl State {
                 _ => {}
         }
 
-        let multi_sampled = multisampled(self.sample_count);
-
         {
             match self.example {
                 Example::TwoTriangles => {
@@ -1620,27 +1590,27 @@ impl State {
                     .unwrap()
                     .execute(&mut encoder, &frame, &self.multisampled_framebuffer, &self.textures, &self.buffers, &vb_info, self.sample_count);
                 },
-                Example::MC => {
-                    let mut rp = self.vertex_buffer_infos.get("mc_renderer_vb_info") .unwrap();
+                Example::Mc => {
+                    let rp = self.vertex_buffer_infos.get("mc_renderer_vb_info") .unwrap();
                     self.render_passes.get("mc_renderer_pass")
                     .unwrap()
                     .execute(&mut encoder, &frame, &self.multisampled_framebuffer, &self.textures, &self.buffers, &rp, self.sample_count);
                 }
-                Example::RANDOM => {
-                    let mut rp = self.vertex_buffer_infos.get("random_triangles_vb_info") .unwrap(); // TODO: create this.
+                Example::Random => {
+                    let rp = self.vertex_buffer_infos.get("random_triangles_vb_info") .unwrap(); // TODO: create this.
                     self.render_passes.get("mc_renderer_pass")
                     .unwrap()
                     .execute(&mut encoder, &frame, &self.multisampled_framebuffer, &self.textures, &self.buffers, &rp, self.sample_count);
                 }
-                Example::RAY_MARCH => {
-                    let mut rp = self.vertex_buffer_infos.get("two_triangles_vb_info") .unwrap(); // TODO: create this.
+                Example::VolumetricNoise => {
+                    let rp = self.vertex_buffer_infos.get("two_triangles_vb_info") .unwrap(); // TODO: create this.
                     self.render_passes.get("ray_renderer_pass")
                     .unwrap()
                     .execute(&mut encoder, &frame, &self.multisampled_framebuffer, &self.textures, &self.buffers, &rp, self.sample_count);
 
                 },
-                Example::SPHERE_TRACER => {
-                    let mut rp = self.vertex_buffer_infos.get("two_triangles_vb_info") .unwrap(); // TODO: create this.
+                Example::Volumetric3dTexture => {
+                    let rp = self.vertex_buffer_infos.get("two_triangles_vb_info") .unwrap(); // TODO: create this.
                     self.render_passes.get("ray_renderer_pass")
                     .unwrap()
                     .execute(&mut encoder, &frame, &self.multisampled_framebuffer, &self.textures, &self.buffers, &rp, self.sample_count);
@@ -1836,7 +1806,7 @@ fn create_vertex_buffers(device: &wgpu::Device, buffers: &mut HashMap::<String, 
 
     let mut rng = thread_rng();
     let mut random_triangles = Vec::new();
-    for i in 0..RANDOM_TRIANGLE_COUNT {
+    for _i in 0..RANDOM_TRIANGLE_COUNT {
         let a1 = rng.gen(); 
         let a2 = rng.gen(); 
         let a3 = rng.gen(); 
@@ -1972,16 +1942,13 @@ fn create_textures(device: &wgpu::Device, queue: &wgpu::Queue, sc_desc: &wgpu::S
     println!(" ... OK'");
       
     print!("    * Creating ray texture.");
-    let ray_texture = gradu::Texture::create_texture2D(&queue, &device, &sc_desc, sample_count, 256, 256);
+    let ray_texture = gradu::Texture::create_texture2d(&device, &sc_desc, sample_count, 256, 256);
     textures.insert(TEXTURES.ray_texture.name.to_string(), ray_texture);
     println!(" ... OK'");
 
     print!("    * Creating {} texture.", TEXTURES.noise3d.name);
-    let noise3dtexture = gradu::Texture::create_texture3D(
-        &queue,
+    let noise3dtexture = gradu::Texture::create_texture3d(
         &device,
-        &sc_desc, // TODO: choose which one to use.
-        //&wgpu::TextureFormat::Rgba32Float,//&sc_desc.format, // ,,,,,,,,,,,,,,,,,,
         &sc_desc.format,
         TEXTURES.noise3d.width.unwrap() as u32,
         TEXTURES.noise3d.height.unwrap() as u32,
@@ -2090,22 +2057,22 @@ async fn run(window: Window, event_loop: EventLoop<()>) {
                                 state: ElementState::Pressed,
                                 virtual_keycode: Some(VirtualKeyCode::Key3),
                                 ..
-                            } => state.example = Example::MC,
+                            } => state.example = Example::Mc,
                             KeyboardInput {
                                 state: ElementState::Pressed,
                                 virtual_keycode: Some(VirtualKeyCode::Key4),
                                 ..
-                            } => state.example = Example::RANDOM,
+                            } => state.example = Example::Random,
                             KeyboardInput {
                                 state: ElementState::Pressed,
                                 virtual_keycode: Some(VirtualKeyCode::Key5),
                                 ..
-                            } => state.example = Example::RAY_MARCH,
+                            } => state.example = Example::VolumetricNoise,
                             KeyboardInput {
                                 state: ElementState::Pressed,
                                 virtual_keycode: Some(VirtualKeyCode::Key6),
                                 ..
-                            } => state.example = Example::SPHERE_TRACER,
+                            } => state.example = Example::Volumetric3dTexture,
                             _ => {}
                         }
                     }

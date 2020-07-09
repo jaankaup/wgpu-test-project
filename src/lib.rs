@@ -97,7 +97,7 @@ impl Buffer {
     }
     
     /// Method for copying the content of the buffer into a vector.
-    pub async fn to_vec<T: Convert2Vec>(&self, device: &wgpu::Device, queue: &wgpu::Queue, whole_buffer: bool) -> Vec<T> {
+    pub async fn to_vec<T: Convert2Vec>(&self, device: &wgpu::Device, queue: &wgpu::Queue) -> Vec<T> {
 
         let staging_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: None,
@@ -107,21 +107,21 @@ impl Buffer {
         });
 
         let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
-        let size = match whole_buffer {
-            true => self.capacity,
-            false => match self.capacity_used {
-                Some(some_size) => some_size as usize,
-                None => {
-                    let error_msg = "Buffer.to_vec is called with argument whole_buffer == false, \
-                                     but capacity_used is None. Consider to define \
-                                     Buffer.capacity.used with some value before calling \
-                                     this method or call this method \
-                                     with @whole_buffer == true \
-                                     to get the content of whole buffer.";
-                    panic!("{}", error_msg);
-                }
-            }
-        };
+        //let size = match whole_buffer {
+        //    true => self.capacity,
+        //    false => match self.capacity_used {
+        //        Some(some_size) => some_size as usize,
+        //        None => {
+        //            let error_msg = "Buffer.to_vec is called with argument whole_buffer == false, \
+        //                             but capacity_used is None. Consider to define \
+        //                             Buffer.capacity.used with some value before calling \
+        //                             this method or call this method \
+        //                             with @whole_buffer == true \
+        //                             to get the content of whole buffer.";
+        //            panic!("{}", error_msg);
+        //        }
+        //    }
+        //};
 
         encoder.copy_buffer_to_buffer(&self.buffer, 0, &staging_buffer, 0, self.capacity as wgpu::BufferAddress);
         queue.submit(Some(encoder.finish()));
@@ -330,7 +330,7 @@ impl Texture {
         }
     }
 
-    pub fn create_texture2D(queue: &wgpu::Queue, device: &wgpu::Device, sc_desc: &wgpu::SwapChainDescriptor, sample_count: u32, width: u32, height: u32) -> Self {
+    pub fn create_texture2d(device: &wgpu::Device, sc_desc: &wgpu::SwapChainDescriptor, sample_count: u32, width: u32, height: u32) -> Self {
 
         let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
             address_mode_u: wgpu::AddressMode::MirrorRepeat,
@@ -390,7 +390,7 @@ impl Texture {
         }
     }
 
-    pub fn create_texture3D(queue: &wgpu::Queue, device: &wgpu::Device, sc_desc: &wgpu::SwapChainDescriptor, format: &wgpu::TextureFormat, width: u32, height: u32, depth: u32) -> Self {
+    pub fn create_texture3d(device: &wgpu::Device, format: &wgpu::TextureFormat, width: u32, height: u32, depth: u32) -> Self {
 
         let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
             address_mode_u: wgpu::AddressMode::MirrorRepeat,
@@ -886,8 +886,8 @@ pub struct RayCamera {
     pub view: cgmath::Vector3<f32>,
     pub up: cgmath::Vector3<f32>,
     pub fov: cgmath::Vector2<f32>,
-    pub apertureRadius: f32,
-    pub focalDistance: f32,
+    pub aperture_radius: f32,
+    pub focal_distance: f32,
 }
 
 unsafe impl bytemuck::Zeroable for RayCamera {}
@@ -1162,8 +1162,8 @@ pub struct RayCameraUniform {
     view: cgmath::Vector4<f32>, // target    // original: float3
     up: cgmath::Vector4<f32>,
     fov: cgmath::Vector4<f32>, // fovy
-    apertureRadius: f32, // new!
-    focalDistance: f32, // new!
+    aperture_radius: f32, // new!
+    focal_distance: f32, // new!
 }
 
 impl RayCameraUniform {
@@ -1176,8 +1176,8 @@ impl RayCameraUniform {
                  (45.0 as f32).to_radians(),
                  111.0,
                  222.0).into(),
-            apertureRadius: 0.0,
-            focalDistance: 1.0,
+            aperture_radius: 0.0,
+            focal_distance: 1.0,
         }
     }
 
@@ -1186,8 +1186,8 @@ impl RayCameraUniform {
             self.view = cgmath::Vector4::new(camera.view.x, camera.view.y, camera.view.z, 0.0);
             self.up   = cgmath::Vector4::new(camera.up.x, camera.up.y,   camera.up.z, 0.0);  
             self.fov  = cgmath::Vector4::new(camera.fov.x, camera.fov.y, 123.0, 234.0); // 2 dummy values. 
-            self.apertureRadius = camera.apertureRadius;
-            self.focalDistance = camera.focalDistance;
+            self.aperture_radius = camera.aperture_radius;
+            self.focal_distance = camera.focal_distance;
     }
 }
 

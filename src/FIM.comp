@@ -6,7 +6,9 @@
 
 layout(local_size_x = LOCAL_X_DIM, local_size_y = LOCAL_Y_DIM, local_size_z = LOCAL_Z_DIM) in;
 
-//                           X4 O4
+
+
+//                           X4 , O4 (unknow solution)
 //                           /\
 //                          /  \\
 //                         /    \ \
@@ -17,24 +19,49 @@ layout(local_size_x = LOCAL_X_DIM, local_size_y = LOCAL_Y_DIM, local_size_z = LO
 //                    /              \   \
 //                   /                \    \
 //                  /                  \    \   1100
-//                 /                    \     \
+//                 /              1010  \     \
 //                /                      \     \
-//     1101      /                        \     \
+//     1001      /                        \     \
 //              /               ^          \     \
 //             /                .           \     \
 //            /                 |            \     \
 //           /                  .             \     \
-//          /                   | 1010         \     \
+//          /                   |              \     \
 //         /                    .               \     \
-//        /                     |                \     O  X3 O3
-//       /                      .               . \    |
-//      /                       |     ,            \   |
-//     /         0101      ,                        \  | 0110 
-//    /          .              O X5 O5              \ |      
-//   / .                                              \|       
+//        /                     |                \  .  O  X3 , O3 (known value)
+//       /                      .        .   .  . \    |
+//      /                       |  .  .            \   |
+//     /         0101   .  .                        \  | 0110 
+//    /          .  .           O X5                 \ |      
+//   / .  .  .                                        \|       
 //   +-------------------------------------------------+
-// X1 O1                    0011                         X2 O2
+// X1 , O1 (known value)      0011                       X2 , O2 (known value)
+
+// Xn :: vertex.
+// On :: solution
                                                                          
+// * Arrival time X5 -> X4
+// * Constant speed function in tetrahedra
+// * Causality property of eikonal solution for T(X1, X2, X3) 
+// * Wave front intersect the tetrahedra at point X5.
+// * If x5 if located outstide triangle T(X1, X2, X3), X5 is projected to the closest boudary (e.g (x1,x3)) 
+//   and O4 is calculated via a wave propagation in the triangle (x1, x3, x4). 
+// * Based on Fermat's principle the goal is to find locally that location of x5 which minimizes th travel time from 
+//   x5 to x4
+// O5,4 = O4 - O5 = sqrt(e5,4T * Me5,4)
+// * x5 is the center of mass of the surface. Using barycentric coordinates x5 = \1 * x1 + \2 * x2 + (1 - \1 - \2) * x3;
+// * O4(\1, \2) = \1 * x1 + \2 * x2 + (1 - \1 - \2) * x3 + sqrt(e5,4T * Me5,4)
+// * In order to minimize O4 we have to calculate the partial derivates of O4(\1, \2) with respectof \1 and \2 and equate the to zero
+//   which results in a non-linear system of equations.
+// * Kirby and Whitaker: 
+//   	e5,4 = x4 - x5 = x4-(\1x1 + \2x2 + \3x3) = [e1,3 e2,3 e3,4]\ , where \ = [\1 \2 1]T 
+//   	e5,4T Me5,4 = \T[e1,3\ e2,3T e3,4T]T M[e1,3 e2,3 e3,4]\ = \TM'\ 
+
+// ------------------------------------------------------------------------------------------------------
+//      0
+// ------------------------------------------------------------------------------------------------------
+//
+//     
                                                                          
 // E1,2 = 0011
 // E1,3 = 0101

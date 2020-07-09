@@ -1,4 +1,4 @@
-# Eikonal equation solver
+# An Eikonal equation solver
 
 An eikonal equation solver using FIM (fast iterative marching) method. The project is implemented using [wgpu-rs](https://github.com/gfx-rs/wgpu/rs).
 
