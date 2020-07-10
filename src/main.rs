@@ -83,7 +83,7 @@ static BUFFERS:  Buffers = Buffers {
 struct ShaderModuleInfo {
     name: &'static str,
     source_file: &'static str,
-    stage: &'static str, // TODO: remove? 
+    _stage: &'static str, // TODO: remove? 
 }
 
 enum Resource {
@@ -94,7 +94,7 @@ enum Resource {
 
 struct VertexBufferInfo {
     vertex_buffer_name: String,
-    index_buffer: Option<String>,
+    _index_buffer: Option<String>,
     start_index: u32,
     end_index: u32,
     instances: u32,
@@ -223,37 +223,37 @@ struct ComputePipelineInfo {
 // ];
 
 static VTN_SHADERS: [ShaderModuleInfo; 2]  = [
-    ShaderModuleInfo {name: "vtn_render_vert", source_file: "vtn_render_vert.spv", stage: "vertex"},
-    ShaderModuleInfo {name: "vtn_render_frag", source_file: "vtn_render_frag.spv", stage: "frag"},
+    ShaderModuleInfo {name: "vtn_render_vert", source_file: "vtn_render_vert.spv", _stage: "vertex"},
+    ShaderModuleInfo {name: "vtn_render_frag", source_file: "vtn_render_frag.spv", _stage: "frag"},
 ];
 
 static MC_RENDER_SHADERS: [ShaderModuleInfo; 2]  = [
-    ShaderModuleInfo {name: "mc_render_vert", source_file: "mc_render_vert.spv", stage: "vertex"},
-    ShaderModuleInfo {name: "mc_render_frag", source_file: "mc_render_frag.spv", stage: "frag"},
+    ShaderModuleInfo {name: "mc_render_vert", source_file: "mc_render_vert.spv", _stage: "vertex"},
+    ShaderModuleInfo {name: "mc_render_frag", source_file: "mc_render_frag.spv", _stage: "frag"},
 ];
 
 static MARCHING_CUBES_SHADER: ShaderModuleInfo  = ShaderModuleInfo { 
            name: "mc",
            source_file: "mc.spv",
-           stage: "compute",
+           _stage: "compute",
 };
 
 static RAY_MARCH_SHADER: ShaderModuleInfo  = ShaderModuleInfo { 
            name: "ray_march",
            source_file: "ray.spv",
-           stage: "compute",
+           _stage: "compute",
 };
 
 static SPHERE_TRACER_SHADER: ShaderModuleInfo  = ShaderModuleInfo { 
            name: "sphere_tracer",
            source_file: "sphere_tracer_comp.spv",
-           stage: "compute",
+           _stage: "compute",
 };
 
 static GENERATE_3D_SHADER: ShaderModuleInfo  = ShaderModuleInfo { 
            name: "noise_shader",
            source_file: "generate_noise3d.spv",
-           stage: "compute",
+           _stage: "compute",
 };
 
 fn multisampled(sample_count: u32) -> bool {
@@ -265,12 +265,12 @@ fn create_two_triangles_info(sample_count: u32) -> RenderPipelineInfo {
         vertex_shader: ShaderModuleInfo {
             name: "two_triangles_vert",
             source_file: "two_triangles_vert.spv",
-            stage: "vertex"
+            _stage: "vertex"
         }, 
         fragment_shader: Some(ShaderModuleInfo {
             name: "two_triangles_frag",
             source_file: "two_triangles_frag.spv",
-            stage: "frag"
+            _stage: "frag"
         }), 
         bind_groups: vec![
                 vec![ 
@@ -308,12 +308,12 @@ fn vtn_renderer_info(sample_count: u32) -> RenderPipelineInfo {
        vertex_shader: ShaderModuleInfo {
            name: VTN_SHADERS[0].name,
            source_file: VTN_SHADERS[0].source_file,
-           stage: "vertex"
+           _stage: "vertex"
        }, 
        fragment_shader: Some(ShaderModuleInfo {
            name: VTN_SHADERS[1].name,
            source_file: VTN_SHADERS[1].source_file,
-           stage: "frag"
+           _stage: "frag"
        }), 
        bind_groups:
            vec![ 
@@ -364,12 +364,12 @@ fn ray_renderer_info(sample_count: u32) -> RenderPipelineInfo {
         vertex_shader: ShaderModuleInfo {
             name: "two_triangles_vert",
             source_file: "two_triangles_vert.spv",
-            stage: "vertex"
+            _stage: "vertex"
         }, 
         fragment_shader: Some(ShaderModuleInfo {
             name: "two_triangles_frag",
             source_file: "two_triangles_frag.spv",
-            stage: "frag"
+            _stage: "frag"
         }), 
         bind_groups: vec![
                 vec![ 
@@ -379,8 +379,8 @@ fn ray_renderer_info(sample_count: u32) -> RenderPipelineInfo {
                         resource: Resource::TextureView(TEXTURES.ray_texture.name),
                         binding_type: wgpu::BindingType::SampledTexture {
                            multisampled: multisampled(sample_count),
-                           component_type: wgpu::TextureComponentType::Uint,
-                           //component_type: wgpu::TextureComponentType::Float,
+                           //component_type: wgpu::TextureComponentType::Uint,
+                           component_type: wgpu::TextureComponentType::Float,
                            dimension: wgpu::TextureViewDimension::D2,
                         },
                     }, 
@@ -408,12 +408,12 @@ fn mc_renderer_info(sample_count: u32) -> RenderPipelineInfo {
        vertex_shader: ShaderModuleInfo {
            name: MC_RENDER_SHADERS[0].name,
            source_file: MC_RENDER_SHADERS[0].source_file,
-           stage: "vertex"
+           _stage: "vertex"
        }, 
        fragment_shader: Some(ShaderModuleInfo {
            name: MC_RENDER_SHADERS[1].name,
            source_file: MC_RENDER_SHADERS[1].source_file,
-           stage: "frag"
+           _stage: "frag"
        }), 
        bind_groups:
            vec![ 
@@ -463,7 +463,7 @@ fn marching_cubes_info() -> ComputePipelineInfo {
        compute_shader: ShaderModuleInfo {
            name: MARCHING_CUBES_SHADER.name,
            source_file: MARCHING_CUBES_SHADER.source_file,
-           stage: "compute"
+           _stage: "compute"
        }, 
        bind_groups:
            vec![ 
@@ -509,7 +509,7 @@ fn ray_march_info(sample_count: u32) -> ComputePipelineInfo {
        compute_shader: ShaderModuleInfo {
            name: RAY_MARCH_SHADER.name,
            source_file: RAY_MARCH_SHADER.source_file,
-           stage: "compute"
+           _stage: "compute"
        }, 
        bind_groups:
            vec![ 
@@ -552,7 +552,7 @@ fn ray_march_info(sample_count: u32) -> ComputePipelineInfo {
                         visibility: wgpu::ShaderStage::COMPUTE,
                         resource: Resource::Buffer(BUFFERS.ray_march_output_buffer.name),
                         binding_type: wgpu::BindingType::StorageBuffer {
-                           dynamic: false, //true,
+                           dynamic: false,
                            readonly: false,
                            min_binding_size: wgpu::BufferSize::new(256*256*4),
                         },
@@ -564,7 +564,7 @@ fn ray_march_info(sample_count: u32) -> ComputePipelineInfo {
                         visibility: wgpu::ShaderStage::COMPUTE,
                         resource: Resource::Buffer(BUFFERS.ray_debug_buffer.name),
                         binding_type: wgpu::BindingType::StorageBuffer {
-                           dynamic: false, //true,
+                           dynamic: false,
                            readonly: false,
                            min_binding_size: wgpu::BufferSize::new(BUFFERS.ray_debug_buffer.size.unwrap().into()),
                         },
@@ -581,7 +581,7 @@ fn sphere_tracer_info(sample_count: u32) -> ComputePipelineInfo {
        compute_shader: ShaderModuleInfo {
            name: SPHERE_TRACER_SHADER.name,
            source_file: SPHERE_TRACER_SHADER.source_file,
-           stage: "compute"
+           _stage: "compute"
        }, 
        bind_groups:
            vec![ 
@@ -592,7 +592,7 @@ fn sphere_tracer_info(sample_count: u32) -> ComputePipelineInfo {
                         resource: Resource::Buffer(BUFFERS.ray_camera_uniform_buffer.name),
                         binding_type: wgpu::BindingType::UniformBuffer {
                            dynamic: false,
-                           min_binding_size: None, //wgpu::BufferSize::new(std::mem::size_of::<RayCameraUniform>() as u64) * 4,
+                           min_binding_size: None,
                         },
                    },
                ],
@@ -615,16 +615,6 @@ fn sphere_tracer_info(sample_count: u32) -> ComputePipelineInfo {
                           comparison: false,
                        },
                    },
-                   //BindGroupInfo {
-                   //     binding: 1,
-                   //     visibility: wgpu::ShaderStage::COMPUTE,
-                   //     resource: Resource::TextureView(TWO_TRIANGLES_TEXTURE.name),
-                   //     binding_type: wgpu::BindingType::SampledTexture {
-                   //        multisampled: multisampled(sample_count),
-                   //        component_type: wgpu::TextureComponentType::Float,
-                   //        dimension: wgpu::TextureViewDimension::D2,
-                   //     },
-                   //},
                    BindGroupInfo {
                         binding: 2,
                         visibility: wgpu::ShaderStage::COMPUTE,
@@ -643,16 +633,6 @@ fn sphere_tracer_info(sample_count: u32) -> ComputePipelineInfo {
                           comparison: false,
                        },
                    },
-                   //BindGroupInfo {
-                   //     binding: 3,
-                   //     visibility: wgpu::ShaderStage::COMPUTE,
-                   //     resource: Resource::TextureView(TEXTURES.rock.name),
-                   //     binding_type: wgpu::BindingType::SampledTexture {
-                   //        multisampled: multisampled(sample_count),
-                   //        component_type: wgpu::TextureComponentType::Float,
-                   //        dimension: wgpu::TextureViewDimension::D2,
-                   //     },
-                   //},
                    BindGroupInfo {
                         binding: 4,
                         visibility: wgpu::ShaderStage::COMPUTE,
@@ -671,16 +651,6 @@ fn sphere_tracer_info(sample_count: u32) -> ComputePipelineInfo {
                           comparison: false,
                        },
                    },
-                   //BindGroupInfo {
-                   //     binding: 5,
-                   //     visibility: wgpu::ShaderStage::COMPUTE,
-                   //     resource: Resource::TextureView(TEXTURES.noise3d.name),
-                   //     binding_type: wgpu::BindingType::SampledTexture {
-                   //        multisampled: false,
-                   //        component_type: wgpu::TextureComponentType::Float,
-                   //        dimension: wgpu::TextureViewDimension::D3,
-                   //     },
-                   //},
                ],
                vec![
                    BindGroupInfo {
@@ -717,7 +687,7 @@ fn generate_noise3d_info() -> ComputePipelineInfo {
        compute_shader: ShaderModuleInfo {
            name: GENERATE_3D_SHADER.name,
            source_file: GENERATE_3D_SHADER.source_file,
-           stage: "compute"
+           _stage: "compute"
        }, 
        bind_groups:
            vec![ 
@@ -725,12 +695,6 @@ fn generate_noise3d_info() -> ComputePipelineInfo {
                    BindGroupInfo {
                         binding: 0,
                         visibility: wgpu::ShaderStage::COMPUTE,
-                        //resource: Resource::TextureView(TEXTURES.noise3d.name), // TODO: create
-//                        binding_type: wgpu::BindingType::StorageTexture {
-//                            dimension: wgpu::TextureViewDimension::D3,
-//                            format: wgpu::TextureFormat::Bgra8UnormSrgb,
-//                            readonly: false,
-//                        },
                         resource: Resource::Buffer(BUFFERS.noise_3d_output_buffer.name),
                         binding_type: wgpu::BindingType::StorageBuffer {
                            dynamic: false,
@@ -975,7 +939,6 @@ pub struct State {
     camera_controller: CameraController,
     camera_uniform: CameraUniform,
     example: Example,
-    //mc_vertex_count: u32,
     ray_camera_uniform: gradu::RayCameraUniform,
     time_counter: u128,
     multisampled_framebuffer: wgpu::TextureView,
@@ -1054,7 +1017,7 @@ impl State {
         buffers.insert(BUFFERS.camera_uniform_buffer.name.to_string(), camera_buffer);
 
         // The ray camera.
-        let mut ray_camera = RayCamera {
+        let ray_camera = RayCamera {
             pos: (0.0, 5.0, 0.0).into(),
             view: Vector3::new(0.0, 0.0, -1.0).normalize(),
             up: cgmath::Vector3::unit_y(),
@@ -1062,22 +1025,6 @@ impl State {
             aperture_radius: 1.0, // this is only used in path tracing.
             focal_distance: 1.0, // camera distance to the camera screen.
         };
-
-        // TODO: REMOVE?
-        ray_camera.view = Vector3::new(
-            0.0,
-            0.0,
-            -1.0,
-        );
-        // TODO: REMOVE?
-        ray_camera.up = Vector3::new(
-            0.0,
-            1.0,
-            0.0,
-        );
-
-        // TODO: REMOVE?
-        ray_camera.view = ray_camera.view.normalize_to(1.0);
 
         let mut ray_camera_uniform = RayCameraUniform::new(); 
         ray_camera_uniform.update(&ray_camera);
@@ -1109,7 +1056,7 @@ impl State {
 
         let two_triangles_vb_info = VertexBufferInfo {
             vertex_buffer_name: "two_triangles_buffer".to_string(),
-            index_buffer: None,
+            _index_buffer: None,
             start_index: 0,
             end_index: 6,
             instances: 2,
@@ -1139,7 +1086,7 @@ impl State {
 
         let vtn_vb_info = VertexBufferInfo {
             vertex_buffer_name: "cube_buffer".to_string(),
-            index_buffer: None,
+            _index_buffer: None,
             start_index: 0,
             end_index: 36,
             instances: 12,
@@ -1171,7 +1118,7 @@ impl State {
 
         let ray_renderer_vb_info = VertexBufferInfo {
             vertex_buffer_name: "two_triangles_buffer".to_string(),
-            index_buffer: None,
+            _index_buffer: None,
             start_index: 0,
             end_index: 6,
             instances: 2,
@@ -1203,7 +1150,7 @@ impl State {
 
         let mc_renderer_vb_info = VertexBufferInfo {
             vertex_buffer_name: BUFFERS.mc_output_buffer.name.to_string(),
-            index_buffer: None,
+            _index_buffer: None,
             start_index: 0,
             end_index: 0,
             instances: 0,
@@ -1212,7 +1159,7 @@ impl State {
         // TODO: move this somewhere else.
         let random_triangles_vb_info = VertexBufferInfo {
             vertex_buffer_name: BUFFERS.random_triangle_buffer.name.to_string(),
-            index_buffer: None,
+            _index_buffer: None,
             start_index: 0,
             end_index: RANDOM_TRIANGLE_COUNT*3,
             instances: RANDOM_TRIANGLE_COUNT,
@@ -1263,8 +1210,8 @@ impl State {
         let volume_noise_pass = ComputePass {
             pipeline: volume_noise_compute_pipeline,
             bind_groups: volume_noise_bind_groups,
-            dispatch_x: 32,
-            dispatch_y: 32,
+            dispatch_x: CAMERA_RESOLUTION.0 / 8,
+            dispatch_y: CAMERA_RESOLUTION.1 / 8,
             dispatch_z: 1,
         };
 
@@ -1283,8 +1230,8 @@ impl State {
         let volume_3d_pass = ComputePass {
             pipeline: volume_3d_compute_pipeline,
             bind_groups: volume_3d_bind_groups,
-            dispatch_x: 32,
-            dispatch_y: 32,
+            dispatch_x: CAMERA_RESOLUTION.0 / 8,
+            dispatch_y: CAMERA_RESOLUTION.1 / 8,
             dispatch_z: 1,
         };
 
@@ -1370,51 +1317,6 @@ impl State {
 
         println!("");
 
-        //println!("\nLaunching sphere tracer.\n");
-        //let mut sphere_encoder = 
-        //    device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
-        //{
-        //    let mut sphere_pass = sphere_encoder.begin_compute_pass();
-        //    sphere_pass.set_pipeline(&sphere_tracer_compute_pipeline);
-        //    for (e, bgs) in sphere_tracer_bind_groups.iter().enumerate() {
-        //        sphere_pass.set_bind_group(e as u32, &bgs, &[]);
-        //    }
-        //    sphere_pass.dispatch(32,32,1);
-        //}
-
-        //sphere_encoder.copy_buffer_to_texture(
-        //    wgpu::BufferCopyView {
-        //        buffer: &buffers.get(BUFFERS.ray_march_output_buffer.name).unwrap().buffer,
-        //        layout: wgpu::TextureDataLayout {
-        //            offset: 0,
-        //            bytes_per_row: 256 * 4, //bits_per_pixel * width ,
-        //            //bytes_per_row: bits_per_pixel * width ,
-        //            rows_per_image: 256,
-        //        },
-        //    },
-        //    wgpu::TextureCopyView{
-        //        texture: &textures.get(TEXTURES.ray_texture).unwrap().texture,
-        //        mip_level: 0,
-        //        origin: wgpu::Origin3d::ZERO,
-        //    },
-        //    wgpu::Extent3d {
-        //        width: 256,
-        //        height: 256,
-        //        depth: 1,
-        //    });
-
-        //queue.submit(Some(sphere_encoder.finish()));
-
-        // let sphere_output = &buffers.get(BUFFERS.sphere_tracer_output_buffer.name).unwrap().to_vec::<f32>(&device, &queue, true).await;
-        // for i in 0..256*256 {
-        //     let offset = i*12;
-        //     println!("{} :: origin: ({}, {}, {}, {})", i, sphere_output[offset], sphere_output[offset+1], sphere_output[offset+2], sphere_output[offset+3]);
-        //     println!("      intersection_point: ({}, {}, {}, {})", sphere_output[offset+4], sphere_output[offset+5], sphere_output[offset+6], sphere_output[offset+7]);
-        //     println!("      normal: ({}, {}, {}, {})", sphere_output[offset+8], sphere_output[offset+9], sphere_output[offset+10], sphere_output[offset+11]);
-        // }
-
-        // TODO: remove index buffer from marching cubes.
-
         println!("\nLaunching marching cubes.\n");
 
         let mut mc_encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
@@ -1449,7 +1351,6 @@ impl State {
             camera_uniform,
             textures,
             example,
-            //mc_vertex_count,
             ray_camera_uniform,
             time_counter,
             multisampled_framebuffer, 
@@ -1475,7 +1376,7 @@ impl State {
         if result == true {
             self.camera_controller.update_camera(&mut self.camera);
             self.camera_controller.update_ray_camera(&mut self.ray_camera);
-            println!("({}, {}, {})",self.camera.pos.x, self.camera.pos.y, self.camera.pos.z);
+            //println!("({}, {}, {})",self.camera.pos.x, self.camera.pos.y, self.camera.pos.z);
         }
         result
     }
@@ -1490,7 +1391,6 @@ impl State {
 
         self.time_counter = time_now;
         self.ray_camera.aperture_radius = self.ray_camera.aperture_radius + 36.0 * ((time_delta as f32) * 0.0000000001).sin();
-//        println!("{}", self.ray_camera.apertureRadius);
 
         self.camera_uniform.update_view_proj(&self.camera);
         self.ray_camera_uniform.update(&self.ray_camera);
@@ -1530,8 +1430,8 @@ impl State {
                             buffer: &self.buffers.get(BUFFERS.ray_march_output_buffer.name).unwrap().buffer,
                             layout: wgpu::TextureDataLayout {
                                 offset: 0,
-                                bytes_per_row: 256 * 4, //bits_per_pixel * width ,
-                                rows_per_image: 256,
+                                bytes_per_row: CAMERA_RESOLUTION.0 * 4,
+                                rows_per_image: CAMERA_RESOLUTION.1,
                             },
                         },
                         wgpu::TextureCopyView{
@@ -1540,9 +1440,9 @@ impl State {
                             origin: wgpu::Origin3d::ZERO,
                         },
                         wgpu::Extent3d {
-                            width: TEXTURES.ray_texture.width.unwrap() as u32,
-                            height: TEXTURES.ray_texture.height.unwrap() as u32,
-                            depth: TEXTURES.ray_texture.depth.unwrap() as u32,
+                            width: CAMERA_RESOLUTION.0,
+                            height: CAMERA_RESOLUTION.1,
+                            depth: 1,
                     });
                 },
 
@@ -1558,8 +1458,8 @@ impl State {
                             buffer: &self.buffers.get(BUFFERS.ray_march_output_buffer.name).unwrap().buffer,
                             layout: wgpu::TextureDataLayout {
                                 offset: 0,
-                                bytes_per_row: 256 * 4, //bits_per_pixel * width ,
-                                rows_per_image: 256,
+                                bytes_per_row: CAMERA_RESOLUTION.0 * 4,
+                                rows_per_image: CAMERA_RESOLUTION.1,
                             },
                         },
                         wgpu::TextureCopyView{
@@ -1568,8 +1468,8 @@ impl State {
                             origin: wgpu::Origin3d::ZERO,
                         },
                         wgpu::Extent3d {
-                            width: 256,
-                            height: 256,
+                            width: CAMERA_RESOLUTION.0,
+                            height: CAMERA_RESOLUTION.1,
                             depth: 1,
                     });
                 },
@@ -1597,20 +1497,20 @@ impl State {
                     .execute(&mut encoder, &frame, &self.multisampled_framebuffer, &self.textures, &self.buffers, &rp, self.sample_count);
                 }
                 Example::Random => {
-                    let rp = self.vertex_buffer_infos.get("random_triangles_vb_info") .unwrap(); // TODO: create this.
+                    let rp = self.vertex_buffer_infos.get("random_triangles_vb_info") .unwrap();
                     self.render_passes.get("mc_renderer_pass")
                     .unwrap()
                     .execute(&mut encoder, &frame, &self.multisampled_framebuffer, &self.textures, &self.buffers, &rp, self.sample_count);
                 }
                 Example::VolumetricNoise => {
-                    let rp = self.vertex_buffer_infos.get("two_triangles_vb_info") .unwrap(); // TODO: create this.
+                    let rp = self.vertex_buffer_infos.get("two_triangles_vb_info") .unwrap();
                     self.render_passes.get("ray_renderer_pass")
                     .unwrap()
                     .execute(&mut encoder, &frame, &self.multisampled_framebuffer, &self.textures, &self.buffers, &rp, self.sample_count);
 
                 },
                 Example::Volumetric3dTexture => {
-                    let rp = self.vertex_buffer_infos.get("two_triangles_vb_info") .unwrap(); // TODO: create this.
+                    let rp = self.vertex_buffer_infos.get("two_triangles_vb_info") .unwrap();
                     self.render_passes.get("ray_renderer_pass")
                     .unwrap()
                     .execute(&mut encoder, &frame, &self.multisampled_framebuffer, &self.textures, &self.buffers, &rp, self.sample_count);
@@ -1618,27 +1518,8 @@ impl State {
 
                 //_ => {},
             }
-
-            //    Example::RAY_MARCH => {
-            //        render_pass.set_pipeline(&self.ray_renderer_pipeline);
-            //        for (e, bgs) in self.ray_renderer_bind_groups.iter().enumerate() {
-            //            render_pass.set_bind_group(e as u32, &bgs, &[]);
-            //        }
-            //        render_pass.set_vertex_buffer(0, self.buffers.get("two_triangles_buffer").unwrap().buffer.slice(..));
-            //        render_pass.draw(0..6, 0..2);
-            //    }
-            //    Example::SPHERE_TRACER => {
-            //        render_pass.set_pipeline(&self.ray_renderer_pipeline);
-            //        for (e, bgs) in self.ray_renderer_bind_groups.iter().enumerate() {
-            //            render_pass.set_bind_group(e as u32, &bgs, &[]);
-            //        }
-            //        render_pass.set_vertex_buffer(0, self.buffers.get("two_triangles_buffer").unwrap().buffer.slice(..));
-            //        render_pass.draw(0..6, 0..2);
-            //    }
-            //}
         }
 
-        //encoder.finish();
         self.queue.submit(Some(encoder.finish()));
     }
 }
@@ -1718,6 +1599,7 @@ fn create_shaders(device: &wgpu::Device) -> HashMap<String, wgpu::ShaderModule> 
     shaders
 }
 
+// TODO: separate each buffer creation.
 fn create_vertex_buffers(device: &wgpu::Device, buffers: &mut HashMap::<String, gradu::Buffer>)  {
 
     println!("\nCreating buffers.\n");
@@ -1924,13 +1806,12 @@ fn create_vertex_buffers(device: &wgpu::Device, buffers: &mut HashMap::<String, 
 fn create_textures(device: &wgpu::Device, queue: &wgpu::Queue, sc_desc: &wgpu::SwapChainDescriptor, textures: &mut HashMap<String, gradu::Texture>, sample_count: u32) {
 
     println!("\nCreating textures.\n");
-    // Two triangles texture.
+
     print!("    * Creating texture from {}.", TEXTURES.grass.source.expect("Missing texture source."));
     let grass_texture = Texture::create_from_bytes(&queue, &device, &sc_desc, sample_count, &include_bytes!("grass2.png")[..], None);
     textures.insert(TEXTURES.grass.name.to_string(), grass_texture);
     println!(" ... OK'");
 
-    // Two triangles texture.
     print!("    * Creating texture from '{}'", TEXTURES.rock.source.expect("Missing texture source."));
     let rock_texture = Texture::create_from_bytes(&queue, &device, &sc_desc, sample_count, &include_bytes!("rock.png")[..], None);
     textures.insert(TEXTURES.rock.name.to_string(), rock_texture);
@@ -1942,7 +1823,7 @@ fn create_textures(device: &wgpu::Device, queue: &wgpu::Queue, sc_desc: &wgpu::S
     println!(" ... OK'");
       
     print!("    * Creating ray texture.");
-    let ray_texture = gradu::Texture::create_texture2d(&device, &sc_desc, sample_count, 256, 256);
+    let ray_texture = gradu::Texture::create_texture2d(&device, &sc_desc, sample_count, CAMERA_RESOLUTION.0, CAMERA_RESOLUTION.1);
     textures.insert(TEXTURES.ray_texture.name.to_string(), ray_texture);
     println!(" ... OK'");
 
@@ -2004,7 +1885,6 @@ fn create_swap_chain(size: winit::dpi::PhysicalSize<u32>, surface: &wgpu::Surfac
                                             
         let sc_desc = wgpu::SwapChainDescriptor {
             usage: wgpu::TextureUsage::OUTPUT_ATTACHMENT,
-            //format: wgpu::TextureFormat::Bgra8UnormSrgb,
             format: wgpu::TextureFormat::Bgra8UnormSrgb, // supported [Bgra8Unorm, Bgra8Srgb]
             width: size.width,
             height: size.height,
@@ -2116,17 +1996,6 @@ fn main() {
     {
         env_logger::init();
         futures::executor::block_on(run(window, event_loop));
-        //let th = std::thread::spawn(move || {
-        //    let mut pool = futures::executor::LocalPool::new();
-        //    let spawner = pool.spawner();
-        //    spawner.spawn_local(async move {
-        //        let event_loop = EventLoop::new();
-        //        let window = winit::window::Window::new(&event_loop).unwrap();
-        //        run(window, event_loop).await;
-        //    }).unwrap();
-        //    pool.run();
-        //});
-        //th.join();
     }
 //    #[cfg(target_arch = "wasm32")]
 //    {

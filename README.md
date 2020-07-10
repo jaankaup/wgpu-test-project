@@ -1,6 +1,7 @@
 # An Eikonal equation solver
 
 An eikonal equation solver using FIM (fast iterative marching) method. The project is implemented using [wgpu-rs](https://github.com/gfx-rs/wgpu/rs).
+The FIM algorithm is based on paper 'A massively parallel Eikonal solver on unstructured meshes'. 
 
 ## Project features. 
 
