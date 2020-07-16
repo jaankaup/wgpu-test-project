@@ -1,0 +1,40 @@
+#version 450
+
+#define LOCAL_X_DIM 4 
+#define LOCAL_Y_DIM 4
+#define LOCAL_Z_DIM 4
+
+layout(local_size_x = LOCAL_X_DIM, local_size_y = LOCAL_Y_DIM, local_size_z = LOCAL_Z_DIM) in;
+
+struct Tetra {
+	vec3 pos_A;
+	vec3 pos_B;
+	vec3 pos_C;
+	vec3 pos_D;
+        float m0;
+        float m1;
+        float m2;
+        float m3;
+        float m4;
+        float m5;
+};
+
+shared Tetra[LOCAL_X_DIM * LOCAL_Y_DIM * LOCAL_Z_DIM] jep;
+//shared int[100] jep;
+
+
+
+void main() {
+
+  uint output_index = (gl_GlobalInvocationID.x ) +
+    gl_NumWorkGroups.x * gl_WorkGroupSize.x * (gl_GlobalInvocationID.y) + 
+    gl_NumWorkGroups.x * gl_WorkGroupSize.x * gl_NumWorkGroups.y * gl_WorkGroupSize.y * (gl_GlobalInvocationID.z);
+
+  if (output_index < 100) {
+    Tetra t;
+    jep[output_index] = t;  
+  }
+
+  barrier();
+
+}

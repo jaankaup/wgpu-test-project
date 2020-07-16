@@ -40,6 +40,7 @@ struct Buffers {
     sphere_tracer_output_buffer: BufferInfo,
     random_triangle_buffer: BufferInfo,
     noise_3d_output_buffer: BufferInfo,
+    bitonic: BufferInfo,
 }
 
 static RANDOM_TRIANGLE_COUNT: u32 = 1000;
@@ -66,7 +67,7 @@ static TEXTURES: Textures = Textures {
 };
 
 // Size in bytes.
-static BUFFERS:  Buffers = Buffers {                                           
+static BUFFERS:  Buffers = Buffers {
     camera_uniform_buffer:       BufferInfo { name: "camera_uniform_buffer",     size: None,},
     ray_camera_uniform_buffer:   BufferInfo { name: "ray_camera_uniform_buffer", size: None,},
     mc_uniform_buffer:           BufferInfo { name: "mc_uniform_buffer",         size: None,},
@@ -77,6 +78,7 @@ static BUFFERS:  Buffers = Buffers {
     sphere_tracer_output_buffer: BufferInfo { name: "sphere_tracer_output",      size: Some(CAMERA_RESOLUTION.0 as u32 * CAMERA_RESOLUTION.1 as u32 * 12 * 4),},
     random_triangle_buffer:      BufferInfo { name: "random_triangle_buffer",    size: None,},
     noise_3d_output_buffer:      BufferInfo { name: "noise_3d_output_buffer",    size: Some(N_3D_RES.0 * N_3D_RES.1 * N_3D_RES.2 * 4),},
+    bitonic:                     BufferInfo { name: "bitonic",                   size: Some(8192 * 4),},
 };
 
 #[derive(Clone, Copy)]
@@ -253,6 +255,12 @@ static SPHERE_TRACER_SHADER: ShaderModuleInfo  = ShaderModuleInfo {
 static GENERATE_3D_SHADER: ShaderModuleInfo  = ShaderModuleInfo { 
            name: "noise_shader",
            source_file: "generate_noise3d.spv",
+           _stage: "compute",
+};
+
+static BITONIC_SHADER: ShaderModuleInfo  = ShaderModuleInfo { 
+           name: "bitonic_shader",
+           source_file: "local_sort_comp.spv",
            _stage: "compute",
 };
 
@@ -672,7 +680,7 @@ fn sphere_tracer_info(sample_count: u32) -> ComputePipelineInfo {
                         binding_type: wgpu::BindingType::StorageBuffer {
                            dynamic: false,
                            readonly: false,
-                           min_binding_size: wgpu::BufferSize::new(BUFFERS.ray_march_output_buffer.size.unwrap() as u64),
+                           min_binding_size: wgpu::BufferSize::new(BUFFERS.ray_march_output_buffer.size.unwrap() as u64 / 4),
                         },
                    },
                ],
@@ -680,6 +688,33 @@ fn sphere_tracer_info(sample_count: u32) -> ComputePipelineInfo {
     };
 
     sphere_tracer_info
+}
+
+fn bitonic_info() -> ComputePipelineInfo {
+   let bitonic_info: ComputePipelineInfo = ComputePipelineInfo {
+       compute_shader: ShaderModuleInfo {
+           name: BITONIC_SHADER.name,
+           source_file: BITONIC_SHADER.source_file,
+           _stage: "compute"
+       }, 
+       bind_groups:
+           vec![ 
+               vec![
+                   BindGroupInfo {
+                        binding: 0,
+                        visibility: wgpu::ShaderStage::COMPUTE,
+                        resource: Resource::Buffer(BUFFERS.bitonic.name),
+                        binding_type: wgpu::BindingType::StorageBuffer {
+                           dynamic: false,
+                           readonly: false,
+                           min_binding_size: wgpu::BufferSize::new(BUFFERS.bitonic.size.unwrap() as u64 / 4),
+                        },
+                   },
+               ],
+           ],
+    };
+
+    bitonic_info
 }
 
 fn generate_noise3d_info() -> ComputePipelineInfo {
@@ -1236,8 +1271,43 @@ impl State {
         };
 
         compute_passes.insert("volume_3d_pass".to_string(), volume_3d_pass);
-
         println!("");
+
+        println!("\nCreating bitonic pipeline and bind groups.\n");
+        let bitonic_info = bitonic_info();
+        let (bitonic_bind_groups, bitonic_pipeline) = create_compute_pipeline_and_bind_groups(
+                        &device,
+                        &shaders,
+                        &textures,
+                        &buffers,
+                        &bitonic_info);
+
+        let bitonic_pass = ComputePass {
+            pipeline: bitonic_pipeline,
+            bind_groups: bitonic_bind_groups,
+            dispatch_x: 1,
+            dispatch_y: 1,
+            dispatch_z: 1,
+        };
+
+        compute_passes.insert("bitonic_pass".to_string(), bitonic_pass);
+        println!("");
+
+        println!("\nLaunching bitonic.\n");
+
+        let mut bitonic_encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
+
+        compute_passes.get("bitonic_pass")
+                      .unwrap()
+                      .execute(&mut bitonic_encoder);
+
+        queue.submit(Some(bitonic_encoder.finish()));
+
+        let bitonic_output = &buffers.get(BUFFERS.bitonic.name).unwrap().to_vec::<u32>(&device, &queue).await;
+
+        for i in 0..8192 {
+            println!("{}", bitonic_output[i]);
+        }
 
         println!("\nCreating generate 3d noise pipeline and bind groups.\n");
         let noise3d_info = generate_noise3d_info();
@@ -1595,6 +1665,10 @@ fn create_shaders(device: &wgpu::Device) -> HashMap<String, wgpu::ShaderModule> 
     shaders.insert(GENERATE_3D_SHADER.name.to_string(), device.create_shader_module(wgpu::include_spirv!("generate_noise3d_comp.spv")));
     println!(" ... OK'");
 
+    print!("    * Creating '{}' shader module from file '{}'",BITONIC_SHADER.name, BITONIC_SHADER.source_file);
+    shaders.insert(BITONIC_SHADER.name.to_string(), device.create_shader_module(wgpu::include_spirv!("local_sort_comp.spv")));
+    println!(" ... OK'");
+
     println!("\nShader created!\n");
     shaders
 }
@@ -1652,7 +1726,7 @@ fn create_vertex_buffers(device: &wgpu::Device, buffers: &mut HashMap::<String, 
 
     buffers.insert(BUFFERS.mc_output_buffer.name.to_string(), marching_cubes_output);
 
-    println!(" ... OK'");
+    println!(" ... OK");
 
     print!("    * Creating marching cubes counter buffer as '{}'", BUFFERS.mc_counter_buffer.name);
 
@@ -1665,7 +1739,7 @@ fn create_vertex_buffers(device: &wgpu::Device, buffers: &mut HashMap::<String, 
 
     buffers.insert(BUFFERS.mc_counter_buffer.name.to_string(), marching_cubes_counter);
 
-    println!(" ... OK'");
+    println!(" ... OK");
 
     print!("    * Creating marching cubes uniform buffer as '{}'", BUFFERS.mc_uniform_buffer.name);
 
@@ -1686,6 +1760,7 @@ fn create_vertex_buffers(device: &wgpu::Device, buffers: &mut HashMap::<String, 
 
     println!(" ... OK'");
 
+    print!("    * Creating random triangles buffer as '{}'", BUFFERS.random_triangle_buffer.name);
     let mut rng = thread_rng();
     let mut random_triangles = Vec::new();
     for _i in 0..RANDOM_TRIANGLE_COUNT {
@@ -1787,18 +1862,44 @@ fn create_vertex_buffers(device: &wgpu::Device, buffers: &mut HashMap::<String, 
     println!(" ... OK'");
 
     print!("    * Creating noise output buffer as '{}'", BUFFERS.noise_3d_output_buffer.name);
-
-//    let size = TEXTURES.noise3d.width.unwrap() * TEXTURES.noise3d.height.unwrap() * TEXTURES.noise3d.depth.unwrap(); 
-
     let noise_output_buffer = Buffer::create_buffer_from_data::<f32>(
         device,
         &vec![0 as f32 ; BUFFERS.noise_3d_output_buffer.size.unwrap() as usize / 4],
         wgpu::BufferUsage::STORAGE | wgpu::BufferUsage::COPY_DST | wgpu::BufferUsage::COPY_SRC,
         None
     );
-
     buffers.insert(BUFFERS.noise_3d_output_buffer.name.to_string(), noise_output_buffer);
     println!(" ... OK'");
+
+    print!("    * Creating bitonic buffer as '{}'", BUFFERS.bitonic.name);
+    // let bitonic_buffer = Buffer::create_buffer(
+    //     device,
+    //     BUFFERS.bitonic.size.unwrap().into(),
+    //     wgpu::BufferUsage::STORAGE | wgpu::BufferUsage::COPY_DST | wgpu::BufferUsage::COPY_SRC,
+    //     None
+    // );
+    //buffers.insert(BUFFERS.bitonic.name.to_string(), bitonic_buffer);
+    //
+    let mut bitonic_rust = vec![4294967295 as u32 ; 8192];
+    for i in 0..1300 {
+        let random_number: u32 = rng.gen(); 
+        bitonic_rust[i] = random_number;
+    }
+
+    let bitonic_buffer = Buffer::create_buffer_from_data::<u32>(
+        device,
+        &bitonic_rust,
+        wgpu::BufferUsage::STORAGE | wgpu::BufferUsage::COPY_DST | wgpu::BufferUsage::COPY_SRC,
+        None
+    );
+    buffers.insert(BUFFERS.bitonic.name.to_string(), bitonic_buffer);
+    println!(" ... OK'");
+
+    bitonic_rust.sort();
+//    println!("Rust sort");
+//    for i in 0..8192 {
+//        println!("{} :: {}",i, bitonic_rust[i]);
+//    }
 
     println!("");
 }

@@ -17,4 +17,10 @@
 
 ./spirv.sh src/generate_noise3d_comp.spv src/generate_noise3d.comp 
 
+./spirv.sh src/eikonal_solver_comp.spv src/eikonal_solver.comp 
+
+./spirv.sh src/radix_comp.spv src/radix.comp 
+
+./spirv.sh src/local_sort_comp.spv src/local_sort.comp 
+
 # ./spirv.sh src/noise2_comp.spv src/noise2.comp 

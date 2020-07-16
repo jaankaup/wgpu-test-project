@@ -71,6 +71,44 @@ layout(local_size_x = LOCAL_X_DIM, local_size_y = LOCAL_Y_DIM, local_size_z = LO
 // E3,4 = 1100
 
 // E5,4 wave propagation direction that intersects with the triangle t 1,2,3 at X5.
+
+// vector<float> update() {
+// 
+//     while(!active_list.empty()) {
+// 
+//         const vector<int> vec(active_list.cbegin(), active_list.cend());
+//         const size_t nvec=vec.size();
+// 
+//         for (size_t node=0; node<nvec; ++node) {
+//             process(vec[node]);
+//         }
+// 
+//     }
+//     return getU();
+// }
+
+void process(const int & list_iter) {
+
+    float p = getU()[list_iter];
+    float q = min_solution_one_ring_tetra(list_iter):
+    getU()[list_iter] = q;
+
+    if (abs(p-q) < epsilon*(1+(abs(p)+abs(q))/2) { // coverges
+        for (int i=getN2Row()[list_iter] ; i<getN2nRow()[list_iter+1] ; i++) {
+            if (getN2nCol()[i] != list_iter {
+                if (active_list.find(getN2nCol()[i]) == active_list.end()) {
+                    p = getU()[i];
+                        if (p > getU()[list_iter]) { // add only down wind
+
+                        }
+                }
+            }
+        }
+    }
+
+}
+
+
                                                                          
 
 void main() {

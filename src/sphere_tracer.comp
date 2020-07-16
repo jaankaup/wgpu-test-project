@@ -68,9 +68,9 @@ uint encode_color(vec4 color) {
 
 // Calculate the density value.
 float calculate_density(vec3 f_pos) {
-  vec4 n = texture(sampler3D(t_diffuse3, s_diffuse3), f_pos*0.002) * 2 - vec4(1.0, 1.0, 1.0, 1.0);
+  vec4 n = texture(sampler3D(t_diffuse3, s_diffuse3), f_pos*0.0025) * 2 - vec4(1.0, 1.0, 1.0, 1.0);
   //return f_pos.y + 15 * n.y;
-  return f_pos.y + 4*n.x - 15 * n.w + 100.5 * n.y + 9.0 * n.z + 200;
+  return f_pos.y + 24*sin((f_pos.x + f_pos.y + f_pos.z)*0.01) * n.x - 5 * n.w + 100.5 * n.y + 5.0 * n.z + 200;
   //return f_pos.y + 50 * noise(f_pos*0.1);
 }
 

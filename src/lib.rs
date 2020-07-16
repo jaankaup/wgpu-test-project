@@ -95,6 +95,26 @@ impl Buffer {
             label,
         }
     }
+
+    pub fn create_buffer(device: &wgpu::Device, capacity: u64, usage: wgpu::BufferUsage, label: Option<&str>) -> Self {
+        let buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: label,
+            size: capacity,
+            usage: usage,
+            mapped_at_creation: false,
+        });
+
+        let capacity_used = Some(0);
+        let capacity = capacity as usize; // TODO: fix this later.
+        let label = None; // TODO: fix this later.
+
+        Self {
+            buffer,
+            capacity,
+            capacity_used,
+            label,
+        }
+    }
     
     /// Method for copying the content of the buffer into a vector.
     pub async fn to_vec<T: Convert2Vec>(&self, device: &wgpu::Device, queue: &wgpu::Queue) -> Vec<T> {
@@ -239,11 +259,6 @@ impl Texture {
         if !(bits_per_pixel == 3 || bits_per_pixel == 4) {
             panic!("Bits per pixel must be 3 or 4. Bits per pixel == {}", bits_per_pixel); 
         }
-
-        // println!("THE BITS PER PIXEL == {}", bits_per_pixel);
-        // println!("THE WIDTH == {}", width);
-        // println!("THE HEIGHT == {}", height);
-        // println!("{} * {} * {}  == {}", width, bits_per_pixel, height, width*bits_per_pixel*height);
 
         let mut buffer = vec![0; (info.width * bits_per_pixel * info.height) as usize ];
         reader.next_frame(&mut buffer).unwrap(); //expect("Can't read next frame.");
@@ -452,14 +467,6 @@ impl Texture {
 
         let size = (self.width * self.height * self.depth * 4) as u64;
         
-        // println!("self.width == {} * self.height == {} * self.depth == {} * 4 == {}",
-        //    self.width,
-        //    self.height,
-        //    self.depth,
-        //    (self.width * self.height * self.depth * 4) as u64
-        //);
-
-
         let staging_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: None,
             size: size, 
@@ -1090,7 +1097,7 @@ impl CameraController {
             self.pitch = clamp(self.pitch + (self.sensitivity as f32 * (y * (-1.0)) as f32) , -89.0,89.0);
             self.yaw = self.yaw + self.sensitivity * x as f32 ;
 
-            println!("yaw/pitch = ({},{})", self.yaw, self.pitch);
+            // println!("yaw/pitch = ({},{})", self.yaw, self.pitch);
 
             camera.view = Vector3::new(
                 self.pitch.to_radians().cos() * self.yaw.to_radians().cos(),
@@ -1098,7 +1105,7 @@ impl CameraController {
                 self.pitch.to_radians().cos() * self.yaw.to_radians().sin()
             ).normalize_to(1.0);
 
-            println!("view = ({},{},{})", camera.view.x, camera.view.y, camera.view.z);
+            // println!("view = ({},{},{})", camera.view.x, camera.view.y, camera.view.z);
 
         }
     }
@@ -1138,7 +1145,7 @@ impl CameraController {
             self.pitch = clamp(self.pitch + (self.sensitivity as f32 * (y * (-1.0)) as f32) , -89.0,89.0);
             self.yaw = self.yaw + self.sensitivity * x as f32 ;
 
-            println!("yaw/pitch = ({},{})", self.yaw, self.pitch);
+            // println!("yaw/pitch = ({},{})", self.yaw, self.pitch);
 
             camera.view = Vector3::new(
                 self.pitch.to_radians().cos() * self.yaw.to_radians().cos(),
@@ -1146,7 +1153,7 @@ impl CameraController {
                 self.pitch.to_radians().cos() * self.yaw.to_radians().sin()
             ).normalize_to(1.0);
 
-            println!("ray_view = ({},{},{})", camera.view.x, camera.view.y, camera.view.z);
+            // println!("ray_view = ({},{},{})", camera.view.x, camera.view.y, camera.view.z);
 
         }
     }
