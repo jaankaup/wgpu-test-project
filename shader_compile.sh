@@ -23,4 +23,7 @@
 
 ./spirv.sh src/local_sort_comp.spv src/local_sort.comp 
 
+./spirv.sh src/line_vert.spv src/line.vert 
+./spirv.sh src/line_frag.spv src/line.frag 
+
 # ./spirv.sh src/noise2_comp.spv src/noise2.comp 

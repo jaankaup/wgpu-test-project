@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use rand::prelude::*;
 use std::time::{SystemTime, UNIX_EPOCH};
+use jaankaup_hilbert::hilbert::hilbert_index_reverse;
 
 use cgmath::{prelude::*, Vector3};
 
@@ -19,6 +20,7 @@ enum Example {
     Random,
     VolumetricNoise,
     Volumetric3dTexture,
+    Hilbert2d,
 }
 
 struct Textures {
@@ -41,6 +43,7 @@ struct Buffers {
     random_triangle_buffer: BufferInfo,
     noise_3d_output_buffer: BufferInfo,
     bitonic: BufferInfo,
+    hilbert_2d: BufferInfo,
 }
 
 static RANDOM_TRIANGLE_COUNT: u32 = 1000;
@@ -79,8 +82,8 @@ static BUFFERS:  Buffers = Buffers {
     random_triangle_buffer:      BufferInfo { name: "random_triangle_buffer",    size: None,},
     noise_3d_output_buffer:      BufferInfo { name: "noise_3d_output_buffer",    size: Some(N_3D_RES.0 * N_3D_RES.1 * N_3D_RES.2 * 4),},
     bitonic:                     BufferInfo { name: "bitonic",                   size: Some(8192 * 4),},
+    hilbert_2d:                  BufferInfo { name: "hilbert_2d",                size: None,},
 };
-
 #[derive(Clone, Copy)]
 struct ShaderModuleInfo {
     name: &'static str,
@@ -234,6 +237,11 @@ static MC_RENDER_SHADERS: [ShaderModuleInfo; 2]  = [
     ShaderModuleInfo {name: "mc_render_frag", source_file: "mc_render_frag.spv", _stage: "frag"},
 ];
 
+static LINE_SHADERS: [ShaderModuleInfo; 2]  = [
+    ShaderModuleInfo {name: "line_vert", source_file: "line_vert.spv", _stage: "vertex"},
+    ShaderModuleInfo {name: "line_frag", source_file: "line_frag.spv", _stage: "frag"},
+];
+
 static MARCHING_CUBES_SHADER: ShaderModuleInfo  = ShaderModuleInfo { 
            name: "mc",
            source_file: "mc.spv",
@@ -309,6 +317,39 @@ fn create_two_triangles_info(sample_count: u32) -> RenderPipelineInfo {
     };
 
     two_triangles_info
+}
+
+fn line_info(sample_count: u32) -> RenderPipelineInfo { 
+    let line_info: RenderPipelineInfo = RenderPipelineInfo {
+        vertex_shader: ShaderModuleInfo {
+            name: LINE_SHADERS[0].name,
+            source_file: LINE_SHADERS[0].source_file,
+            _stage: "vertex"
+        }, 
+        fragment_shader: Some(ShaderModuleInfo {
+            name: LINE_SHADERS[1].name,
+            source_file: LINE_SHADERS[1].source_file,
+            _stage: "frag"
+        }), 
+        bind_groups: vec![
+               vec![
+                   BindGroupInfo {
+                            binding: 0,
+                            visibility: wgpu::ShaderStage::VERTEX | wgpu::ShaderStage::FRAGMENT,
+                            resource: Resource::Buffer(BUFFERS.camera_uniform_buffer.name),
+                            binding_type: wgpu::BindingType::UniformBuffer {
+                               dynamic: false,
+                               min_binding_size: None,
+                            },
+                   }, 
+               ],
+        ],
+        input_formats: vec![
+            (wgpu::VertexFormat::Float2, 2 * std::mem::size_of::<f32>() as u64),
+        ],
+    };
+
+    line_info
 }
 
 fn vtn_renderer_info(sample_count: u32) -> RenderPipelineInfo { 
@@ -753,6 +794,7 @@ fn create_render_pipeline_and_bind_groups(device: &wgpu::Device,
                                    textures: &HashMap<String, gradu::Texture>,
                                    buffers: &HashMap<String, gradu::Buffer>,
                                    rpi: &RenderPipelineInfo,
+                                   primitive_topology: &wgpu::PrimitiveTopology,
                                    sample_count: u32)
     -> (Vec<wgpu::BindGroup>, wgpu::RenderPipeline) {
     
@@ -773,18 +815,18 @@ fn create_render_pipeline_and_bind_groups(device: &wgpu::Device,
     
 
            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-               bindings: &layout_entries,
+               entries: &layout_entries,
                label: None,
         });
 
         let texture_bind_group_layout =
             device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-                bindings: &layout_entries,
+                entries: &layout_entries,
                 label: None,
             });
-    
-        let bindings: Vec<wgpu::Binding> 
-            = b_group.into_iter().map(|x| wgpu::Binding {
+
+        let bindings: Vec<wgpu::BindGroupEntry> 
+            = b_group.into_iter().map(|x| wgpu::BindGroupEntry {
                 binding: x.binding,
                 resource: match x.resource {
                         Resource::TextureView(tw) =>  
@@ -798,7 +840,7 @@ fn create_render_pipeline_and_bind_groups(device: &wgpu::Device,
     
         let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             layout: &texture_bind_group_layout,
-            bindings: &bindings,
+            entries: &bindings,
             label: None,
         });
     
@@ -812,6 +854,7 @@ fn create_render_pipeline_and_bind_groups(device: &wgpu::Device,
     
       let render_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
           bind_group_layouts: &bind_group_layouts.iter().collect::<Vec<_>>(), 
+          push_constant_ranges: &[],
       });
     
       // Crete vertex attributes.
@@ -848,7 +891,7 @@ fn create_render_pipeline_and_bind_groups(device: &wgpu::Device,
             depth_bias_slope_scale: 0.0,
             depth_bias_clamp: 0.0,
         }),
-        primitive_topology: wgpu::PrimitiveTopology::TriangleList,
+        primitive_topology: *primitive_topology, //wgpu::PrimitiveTopology::TriangleList,
         color_states: &[
             wgpu::ColorStateDescriptor {
                 format: sc_desc.format,
@@ -910,12 +953,12 @@ fn create_compute_pipeline_and_bind_groups(device: &wgpu::Device,
 
         let texture_bind_group_layout =
            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-               bindings: &layout_entries,
+               entries: &layout_entries,
                label: None,
         });
 
-        let bindings: Vec<wgpu::Binding> 
-            = b_group.into_iter().map(|x| wgpu::Binding {
+        let bindings: Vec<wgpu::BindGroupEntry> 
+            = b_group.into_iter().map(|x| wgpu::BindGroupEntry {
                 binding: x.binding,
                 resource: match x.resource {
                         Resource::TextureView(tw) =>  
@@ -929,7 +972,7 @@ fn create_compute_pipeline_and_bind_groups(device: &wgpu::Device,
 
         let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             layout: &texture_bind_group_layout,
-            bindings: &bindings,
+            entries: &bindings,
             label: None,
         });
 
@@ -943,6 +986,7 @@ fn create_compute_pipeline_and_bind_groups(device: &wgpu::Device,
 
       let compute_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
           bind_group_layouts: &bind_group_layouts.iter().collect::<Vec<_>>(), 
+          push_constant_ranges: &[],
       });
 
       let compute_pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
@@ -1087,6 +1131,7 @@ impl State {
                         &textures,
                         &buffers,
                         &two_triangles_info,
+                        &wgpu::PrimitiveTopology::TriangleList,
                         sample_count);
 
         let two_triangles_vb_info = VertexBufferInfo {
@@ -1117,6 +1162,7 @@ impl State {
                         &textures,
                         &buffers,
                         &vtn_info,
+                        &wgpu::PrimitiveTopology::TriangleList,
                         sample_count);
 
         let vtn_vb_info = VertexBufferInfo {
@@ -1138,6 +1184,39 @@ impl State {
 
         println!("");
 
+        /* LINE (hilbert2d) */
+
+        println!("\nCreating line pipeline and bind groups.\n");
+        let line_info = line_info(sample_count);
+        let (line_groups, line_pipeline) = create_render_pipeline_and_bind_groups(
+                        &device,
+                        &sc_desc,
+                        &shaders,
+                        &textures,
+                        &buffers,
+                        &line_info,
+                        &wgpu::PrimitiveTopology::LineStrip,
+                        sample_count);
+
+        let line_vb_info = VertexBufferInfo {
+            vertex_buffer_name: BUFFERS.hilbert_2d.name.to_string(),
+            _index_buffer: None,
+            start_index: 0,
+            end_index: 64,
+            instances: 64,
+        };
+
+        vertex_buffer_infos.insert("line_vb_info".to_string(), line_vb_info);
+
+        let line_render_pass = RenderPass {
+            pipeline: line_pipeline,
+            bind_groups: line_groups,
+        };
+
+        render_passes.insert("line_render_pass".to_string(), line_render_pass);
+
+        println!("");
+
         /* RAY RENDERER */
 
         println!("\nCreating ray renderer pipeline and bind groups.\n");
@@ -1149,6 +1228,7 @@ impl State {
                         &textures,
                         &buffers,
                         &ray_renderer_info,
+                        &wgpu::PrimitiveTopology::TriangleList,
                         sample_count);
 
         let ray_renderer_vb_info = VertexBufferInfo {
@@ -1181,6 +1261,7 @@ impl State {
                         &textures,
                         &buffers,
                         &mc_renderer_info,
+                        &wgpu::PrimitiveTopology::TriangleList,
                         sample_count);
 
         let mc_renderer_vb_info = VertexBufferInfo {
@@ -1303,11 +1384,11 @@ impl State {
 
         queue.submit(Some(bitonic_encoder.finish()));
 
-        let bitonic_output = &buffers.get(BUFFERS.bitonic.name).unwrap().to_vec::<u32>(&device, &queue).await;
+        // let bitonic_output = &buffers.get(BUFFERS.bitonic.name).unwrap().to_vec::<u32>(&device, &queue).await;
 
-        for i in 0..8192 {
-            println!("{}", bitonic_output[i]);
-        }
+        // for i in 0..8192 {
+        //     println!("{}", bitonic_output[i]);
+        // }
 
         println!("\nCreating generate 3d noise pipeline and bind groups.\n");
         let noise3d_info = generate_noise3d_info();
@@ -1585,6 +1666,12 @@ impl State {
                     .unwrap()
                     .execute(&mut encoder, &frame, &self.multisampled_framebuffer, &self.textures, &self.buffers, &rp, self.sample_count);
                 },
+                Example::Hilbert2d => {
+                    let rp = self.vertex_buffer_infos.get("line_vb_info") .unwrap();
+                    self.render_passes.get("line_render_pass")
+                    .unwrap()
+                    .execute(&mut encoder, &frame, &self.multisampled_framebuffer, &self.textures, &self.buffers, &rp, self.sample_count);
+                },
 
                 //_ => {},
             }
@@ -1667,6 +1754,14 @@ fn create_shaders(device: &wgpu::Device) -> HashMap<String, wgpu::ShaderModule> 
 
     print!("    * Creating '{}' shader module from file '{}'",BITONIC_SHADER.name, BITONIC_SHADER.source_file);
     shaders.insert(BITONIC_SHADER.name.to_string(), device.create_shader_module(wgpu::include_spirv!("local_sort_comp.spv")));
+    println!(" ... OK'");
+
+    print!("    * Creating '{}' shader module from file '{}'",LINE_SHADERS[0].name, LINE_SHADERS[0].source_file);
+    shaders.insert(LINE_SHADERS[0].name.to_string(), device.create_shader_module(wgpu::include_spirv!("line_vert.spv")));
+    println!(" ... OK'");
+
+    print!("    * Creating '{}' shader module from file '{}'",LINE_SHADERS[1].name, LINE_SHADERS[1].source_file);
+    shaders.insert(LINE_SHADERS[1].name.to_string(), device.create_shader_module(wgpu::include_spirv!("line_frag.spv")));
     println!(" ... OK'");
 
     println!("\nShader created!\n");
@@ -1896,6 +1991,39 @@ fn create_vertex_buffers(device: &wgpu::Device, buffers: &mut HashMap::<String, 
     println!(" ... OK'");
 
     bitonic_rust.sort();
+
+    let mut hilbert: Vec<f32> = Vec::new(); //vec![0 as u32 ; 64*2];
+    //let mut previous: [u32 ; 2] = [0,0];
+    for i in 0..64 {
+        let inverse = hilbert_index_reverse(2, 3, i);
+        hilbert.push(inverse[0] as f32 * 0.1);
+        hilbert.push(inverse[1] as f32 * 0.1);
+        //if i == 0 {
+        //    previous = inverse;
+        //    continue;
+        //}
+        //else {
+        //    //println!("previous[0] as f32 * 0.1 == {}", previous[0] as f32 * 0.1); 
+        //    //println!("previous[1] as f32 * 0.1 == {}", previous[1] as f32 * 0.1); 
+        //    hilbert.push(previous[0] as f32 * 0.1);
+        //    hilbert.push(previous[1] as f32 * 0.1);
+        //    previous = inverse;
+        //}
+        //println!("inverse {} :: [{}, {}]",i, inverse[0], inverse[1]); 
+    }
+
+    for i in 0..hilbert.len() {
+        println!("{} :: {}", i, hilbert[i]);
+    }
+
+    let hilbert_buffer = Buffer::create_buffer_from_data::<f32>(
+        device,
+        &hilbert,
+        wgpu::BufferUsage::VERTEX,
+        None
+    );
+    buffers.insert(BUFFERS.hilbert_2d.name.to_string(), hilbert_buffer);
+    println!(" ... OK'");
 //    println!("Rust sort");
 //    for i in 0..8192 {
 //        println!("{} :: {}",i, bitonic_rust[i]);
@@ -1951,7 +2079,7 @@ async fn create_sdqs(window: &winit::window::Window) -> (wgpu::Surface, wgpu::De
         // Create the surface.
         let surface = unsafe { instance.create_surface(window) };
 
-        let (needed_features, unsafe_extensions) = (wgpu::Features::empty(), wgpu::UnsafeFeatures::disallow());
+        let needed_features = wgpu::Features::empty();
 
         // Create the adapter.
         let adapter = instance.request_adapter(
@@ -1959,7 +2087,6 @@ async fn create_sdqs(window: &winit::window::Window) -> (wgpu::Surface, wgpu::De
                 power_preference: wgpu::PowerPreference::Default,
                 compatible_surface: Some(&surface),
             },
-            unsafe_extensions,
         )
         .await
         .unwrap();
@@ -1971,10 +2098,10 @@ async fn create_sdqs(window: &winit::window::Window) -> (wgpu::Surface, wgpu::De
         let (device, queue) = adapter.request_device(
              &wgpu::DeviceDescriptor {
                 features: adapter_features & needed_features,
-                limits: wgpu::Limits::default(),
+                limits: wgpu::Limits::default(), 
                 shader_validation: true,
-            },
-            trace_dir.ok().as_ref().map(std::path::Path::new),
+             },
+             trace_dir.ok().as_ref().map(std::path::Path::new),
         )
         .await
         .unwrap();
@@ -2054,6 +2181,11 @@ async fn run(window: Window, event_loop: EventLoop<()>) {
                                 virtual_keycode: Some(VirtualKeyCode::Key6),
                                 ..
                             } => state.example = Example::Volumetric3dTexture,
+                            KeyboardInput {
+                                state: ElementState::Pressed,
+                                virtual_keycode: Some(VirtualKeyCode::Key7),
+                                ..
+                            } => state.example = Example::Hilbert2d,
                             _ => {}
                         }
                     }
