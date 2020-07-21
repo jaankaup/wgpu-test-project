@@ -1,5 +1,5 @@
 [package]
-name = "gradu1"
+name = "jaankaup_eikonal"
 version = "0.1.0"
 authors = ["jaankaup <janne.a.kauppinen@student.jyu.fi>"]
 edition = "2018"
@@ -10,7 +10,7 @@ name = "gradu"
 path = "src/lib.rs"
 
 [[bin]]
-name = "gradu_application"
+name = "eikonal_application"
 path = "src/main.rs"
 
 [dependencies]

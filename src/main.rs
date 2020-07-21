@@ -345,7 +345,7 @@ fn line_info(sample_count: u32) -> RenderPipelineInfo {
                ],
         ],
         input_formats: vec![
-            (wgpu::VertexFormat::Float2, 2 * std::mem::size_of::<f32>() as u64),
+            (wgpu::VertexFormat::Float4, 4 * std::mem::size_of::<f32>() as u64),
         ],
     };
 
@@ -1075,7 +1075,7 @@ impl State {
         };
 
         // The camera controller.
-        let camera_controller = CameraController::new(2.2,0.2);
+        let camera_controller = CameraController::new(0.1,0.1);
 
         camera.view = Vector3::new(
             camera_controller.pitch.to_radians().cos() * camera_controller.yaw.to_radians().cos(),
@@ -1202,8 +1202,8 @@ impl State {
             vertex_buffer_name: BUFFERS.hilbert_2d.name.to_string(),
             _index_buffer: None,
             start_index: 0,
-            end_index: 64,
-            instances: 64,
+            end_index: 8*8*8,
+            instances: 8*8*8,
         };
 
         vertex_buffer_infos.insert("line_vb_info".to_string(), line_vb_info);
@@ -1562,7 +1562,13 @@ impl State {
     }
 
     pub fn render(&mut self) {
-        let frame = self.swap_chain.get_next_frame().expect("Failed to acquire next swap chain texture").output;
+        let frame = match self.swap_chain.get_current_frame() {
+            Ok(frame) => { frame.output },    
+            Err(_) => {
+                self.swap_chain = self.device.create_swap_chain(&self.surface, &self.sc_desc);
+                self.swap_chain.get_current_frame().expect("Failed to acquire next swap chain texture").output
+            },
+        };
 
 
         let mut encoder = self.device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some("Render Encoder"),
@@ -1994,10 +2000,13 @@ fn create_vertex_buffers(device: &wgpu::Device, buffers: &mut HashMap::<String, 
 
     let mut hilbert: Vec<f32> = Vec::new(); //vec![0 as u32 ; 64*2];
     //let mut previous: [u32 ; 2] = [0,0];
-    for i in 0..64 {
-        let inverse = hilbert_index_reverse(2, 3, i);
-        hilbert.push(inverse[0] as f32 * 0.1);
-        hilbert.push(inverse[1] as f32 * 0.1);
+    for i in 0..(8*8*8) {
+        println!("i == {}", i);
+        let inverse = hilbert_index_reverse(3, 3, i);
+        hilbert.push(inverse[0] as f32 * 0.5);
+        hilbert.push(inverse[1] as f32 * 0.5);
+        hilbert.push(inverse[2] as f32 * 0.5);
+        hilbert.push(((8.0*8.0*8.0) - i as f32) / (8.0*8.0*8.0));
         //if i == 0 {
         //    previous = inverse;
         //    continue;
@@ -2012,9 +2021,9 @@ fn create_vertex_buffers(device: &wgpu::Device, buffers: &mut HashMap::<String, 
         //println!("inverse {} :: [{}, {}]",i, inverse[0], inverse[1]); 
     }
 
-    for i in 0..hilbert.len() {
-        println!("{} :: {}", i, hilbert[i]);
-    }
+    // for i in 0..hilbert.len() {
+    //     println!("{} :: {}", i, hilbert[i]);
+    // }
 
     let hilbert_buffer = Buffer::create_buffer_from_data::<f32>(
         device,
