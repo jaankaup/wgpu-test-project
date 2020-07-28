@@ -1,3 +1,8 @@
+use crate::radix_sort::create_key_blocks;
+use std::borrow::Cow::Borrowed;
+use futures::executor::LocalPool;
+use futures::executor::LocalSpawner;
+//use crate::bindings::{hxtDelaunay,HXTDelaunayOptions,HXTNodeInfo};
 use std::collections::HashMap;
 use rand::prelude::*;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -12,6 +17,9 @@ use winit::{
 };
 
 use gradu::{Camera, RayCamera, CameraController, CameraUniform, Buffer, create_cube, Mc_uniform_data, RayCameraUniform};
+
+mod radix_sort;
+//mod bindings;
 
 enum Example {
     TwoTriangles,
@@ -44,6 +52,10 @@ struct Buffers {
     noise_3d_output_buffer: BufferInfo,
     bitonic: BufferInfo,
     hilbert_2d: BufferInfo,
+    radix_input: BufferInfo,
+    radix_auxiliary: BufferInfo,
+    radix_histogram: BufferInfo,
+    radix_keyblocks: BufferInfo,
 }
 
 static RANDOM_TRIANGLE_COUNT: u32 = 1000;
@@ -83,7 +95,12 @@ static BUFFERS:  Buffers = Buffers {
     noise_3d_output_buffer:      BufferInfo { name: "noise_3d_output_buffer",    size: Some(N_3D_RES.0 * N_3D_RES.1 * N_3D_RES.2 * 4),},
     bitonic:                     BufferInfo { name: "bitonic",                   size: Some(8192 * 4),},
     hilbert_2d:                  BufferInfo { name: "hilbert_2d",                size: None,},
+    radix_input:                 BufferInfo { name: "radix_input",               size: None,}, // TODO: to radix_sort.rs
+    radix_auxiliary:             BufferInfo { name: "radix_auxiliary",           size: None,}, // TODO: to radix_sort.rs
+    radix_histogram:             BufferInfo { name: "radix_histogram",           size: None,}, // TODO: to radix_sort.rs
+    radix_keyblocks:             BufferInfo { name: "radix_keyblocks",           size: None,}, // TODO: to radix_sort.rs
 };
+
 #[derive(Clone, Copy)]
 struct ShaderModuleInfo {
     name: &'static str,
@@ -131,7 +148,7 @@ impl RenderPass {
             let multi_sampled = multisampled(sample_count);
 
             let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                color_attachments: &[
+                color_attachments: Borrowed(&[
                     wgpu::RenderPassColorAttachmentDescriptor {
                             attachment: match multi_sampled { false => &frame.view, true => &multisampled_framebuffer, },
                             resolve_target: match multi_sampled { false => None, true => Some(&frame.view), },
@@ -145,7 +162,7 @@ impl RenderPass {
                             store: true,
                         },
                     }
-                ],
+                ]),
                 //depth_stencil_attachment: None,
                 depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachmentDescriptor {
                     attachment: &textures.get(TEXTURES.depth.name).unwrap().view,
@@ -269,6 +286,12 @@ static GENERATE_3D_SHADER: ShaderModuleInfo  = ShaderModuleInfo {
 static BITONIC_SHADER: ShaderModuleInfo  = ShaderModuleInfo { 
            name: "bitonic_shader",
            source_file: "local_sort_comp.spv",
+           _stage: "compute",
+};
+
+static RADIX_SHADER: ShaderModuleInfo  = ShaderModuleInfo { 
+           name: "radix_0",
+           source_file: "radix_comp.spv",
            _stage: "compute",
 };
 
@@ -731,6 +754,122 @@ fn sphere_tracer_info(sample_count: u32) -> ComputePipelineInfo {
     sphere_tracer_info
 }
 
+// TODO: change project in a such way that this can be moved to radix_sort.rs.
+fn radix0() -> ComputePipelineInfo {
+   let radix0_info: ComputePipelineInfo = ComputePipelineInfo {
+       compute_shader: ShaderModuleInfo {
+           name: RADIX_SHADER.name,
+           source_file: RADIX_SHADER.source_file,
+           _stage: "compute"
+       }, 
+       bind_groups:
+           vec![ 
+               vec![
+                   BindGroupInfo {
+                            binding: 0,
+                            visibility: wgpu::ShaderStage::COMPUTE,
+                            resource: Resource::Buffer(BUFFERS.radix_input.name),
+                            binding_type: wgpu::BindingType::StorageBuffer {
+                               dynamic: false,
+                               readonly: false,
+                               min_binding_size: None,
+                            },
+                   }, 
+                   BindGroupInfo {
+                            binding: 1,
+                            visibility: wgpu::ShaderStage::COMPUTE,
+                            resource: Resource::Buffer(BUFFERS.radix_auxiliary.name),
+                            binding_type: wgpu::BindingType::StorageBuffer {
+                               dynamic: false,
+                               readonly: false,
+                               min_binding_size: None,
+                            },
+                   }, 
+                   BindGroupInfo {
+                            binding: 2,
+                            visibility: wgpu::ShaderStage::COMPUTE,
+                            resource: Resource::Buffer(BUFFERS.radix_histogram.name),
+                            binding_type: wgpu::BindingType::StorageBuffer {
+                               dynamic: false,
+                               readonly: false,
+                               min_binding_size: None,
+                            },
+                   }, 
+                   BindGroupInfo {
+                            binding: 3,
+                            visibility: wgpu::ShaderStage::COMPUTE,
+                            resource: Resource::Buffer(BUFFERS.radix_keyblocks.name),
+                            binding_type: wgpu::BindingType::StorageBuffer {
+                               dynamic: false,
+                               readonly: false,
+                               min_binding_size: None,
+                            },
+                   }, 
+               ],
+           ],
+    };
+
+    radix0_info
+}
+
+// TODO: change project in a such way that this can be moved to radix_sort.rs.
+fn radix1() -> ComputePipelineInfo {
+   let radix1_info: ComputePipelineInfo = ComputePipelineInfo {
+       compute_shader: ShaderModuleInfo {
+           name: RADIX_SHADER.name,
+           source_file: RADIX_SHADER.source_file,
+           _stage: "compute"
+       }, 
+       bind_groups:
+           vec![ 
+               vec![
+                   BindGroupInfo {
+                            binding: 0,
+                            visibility: wgpu::ShaderStage::COMPUTE,
+                            resource: Resource::Buffer(BUFFERS.radix_auxiliary.name),
+                            binding_type: wgpu::BindingType::StorageBuffer {
+                               dynamic: false,
+                               readonly: false,
+                               min_binding_size: None,
+                            },
+                   }, 
+                   BindGroupInfo {
+                            binding: 1,
+                            visibility: wgpu::ShaderStage::COMPUTE,
+                            resource: Resource::Buffer(BUFFERS.radix_input.name),
+                            binding_type: wgpu::BindingType::StorageBuffer {
+                               dynamic: false,
+                               readonly: false,
+                               min_binding_size: None,
+                            },
+                   }, 
+                   BindGroupInfo {
+                            binding: 2,
+                            visibility: wgpu::ShaderStage::COMPUTE,
+                            resource: Resource::Buffer(BUFFERS.radix_histogram.name),
+                            binding_type: wgpu::BindingType::StorageBuffer {
+                               dynamic: false,
+                               readonly: false,
+                               min_binding_size: None,
+                            },
+                   }, 
+                   BindGroupInfo {
+                            binding: 3,
+                            visibility: wgpu::ShaderStage::COMPUTE,
+                            resource: Resource::Buffer(BUFFERS.radix_keyblocks.name),
+                            binding_type: wgpu::BindingType::StorageBuffer {
+                               dynamic: false,
+                               readonly: false,
+                               min_binding_size: None,
+                            },
+                   }, 
+               ],
+           ],
+    };
+
+    radix1_info
+}
+
 fn bitonic_info() -> ComputePipelineInfo {
    let bitonic_info: ComputePipelineInfo = ComputePipelineInfo {
        compute_shader: ShaderModuleInfo {
@@ -815,13 +954,13 @@ fn create_render_pipeline_and_bind_groups(device: &wgpu::Device,
     
 
            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-               entries: &layout_entries,
+               entries: Borrowed(&layout_entries),
                label: None,
         });
 
         let texture_bind_group_layout =
             device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-                entries: &layout_entries,
+                entries: Borrowed(&layout_entries),
                 label: None,
             });
 
@@ -840,7 +979,7 @@ fn create_render_pipeline_and_bind_groups(device: &wgpu::Device,
     
         let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             layout: &texture_bind_group_layout,
-            entries: &bindings,
+            entries: Borrowed(&bindings),
             label: None,
         });
     
@@ -853,8 +992,8 @@ fn create_render_pipeline_and_bind_groups(device: &wgpu::Device,
     print!("    * Creating pipeline ... ");
     
       let render_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-          bind_group_layouts: &bind_group_layouts.iter().collect::<Vec<_>>(), 
-          push_constant_ranges: &[],
+          bind_group_layouts: Borrowed(&bind_group_layouts.iter().collect::<Vec<_>>()), 
+          push_constant_ranges: Borrowed(&[]),
       });
     
       // Crete vertex attributes.
@@ -875,31 +1014,32 @@ fn create_render_pipeline_and_bind_groups(device: &wgpu::Device,
         layout: &render_pipeline_layout,
         vertex_stage: wgpu::ProgrammableStageDescriptor {
             module: &shaders.get(rpi.vertex_shader.name).expect(&format!("Failed to get vertex shader {}.", rpi.vertex_shader.name)),
-            entry_point: "main",
+            entry_point: Borrowed("main"),
         }, 
         fragment_stage: match rpi.fragment_shader {
             None => None,
             s    => Some(wgpu::ProgrammableStageDescriptor {
                             module: &shaders.get(s.unwrap().name).expect(&format!("Failed to fragment shader {}.", s.unwrap().name)),
-                            entry_point: "main",
+                            entry_point: Borrowed("main"),
                     }),
         },
         rasterization_state: Some(wgpu::RasterizationStateDescriptor {
             front_face: wgpu::FrontFace::Ccw,
             cull_mode: wgpu::CullMode::Back,
-            depth_bias: 0,
-            depth_bias_slope_scale: 0.0,
-            depth_bias_clamp: 0.0,
+            ..Default::default()
+            //depth_bias: 0,
+            //depth_bias_slope_scale: 0.0,
+            //depth_bias_clamp: 0.0,
         }),
         primitive_topology: *primitive_topology, //wgpu::PrimitiveTopology::TriangleList,
-        color_states: &[
+        color_states: Borrowed(&[
             wgpu::ColorStateDescriptor {
                 format: sc_desc.format,
                 color_blend: wgpu::BlendDescriptor::REPLACE,
                 alpha_blend: wgpu::BlendDescriptor::REPLACE,
                 write_mask: wgpu::ColorWrite::ALL,
             },
-        ],
+        ]),
         //depth_stencil_state: None,
         depth_stencil_state: Some(wgpu::DepthStencilStateDescriptor {
             format: Texture::DEPTH_FORMAT,
@@ -913,11 +1053,11 @@ fn create_render_pipeline_and_bind_groups(device: &wgpu::Device,
         }),
         vertex_state: wgpu::VertexStateDescriptor {
             index_format: wgpu::IndexFormat::Uint16,
-            vertex_buffers: &[wgpu::VertexBufferDescriptor {
+            vertex_buffers: Borrowed(&[wgpu::VertexBufferDescriptor {
                 stride: stride,
                 step_mode: wgpu::InputStepMode::Vertex,
-                attributes: &vertex_attributes,
-            }],
+                attributes: Borrowed(&vertex_attributes),
+            }]),
         },
         sample_count: sample_count,
         sample_mask: !0,
@@ -953,7 +1093,7 @@ fn create_compute_pipeline_and_bind_groups(device: &wgpu::Device,
 
         let texture_bind_group_layout =
            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-               entries: &layout_entries,
+               entries: Borrowed(&layout_entries),
                label: None,
         });
 
@@ -972,7 +1112,7 @@ fn create_compute_pipeline_and_bind_groups(device: &wgpu::Device,
 
         let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             layout: &texture_bind_group_layout,
-            entries: &bindings,
+            entries: Borrowed(&bindings),
             label: None,
         });
 
@@ -985,15 +1125,15 @@ fn create_compute_pipeline_and_bind_groups(device: &wgpu::Device,
     print!("    * Creating compute pipeline ... ");
 
       let compute_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-          bind_group_layouts: &bind_group_layouts.iter().collect::<Vec<_>>(), 
-          push_constant_ranges: &[],
+          bind_group_layouts: Borrowed(&bind_group_layouts.iter().collect::<Vec<_>>()), 
+          push_constant_ranges: Borrowed(&[]),
       });
 
       let compute_pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
           layout: &compute_pipeline_layout,
           compute_stage: wgpu::ProgrammableStageDescriptor {
               module: &shaders.get(rpi.compute_shader.name).unwrap(),
-              entry_point: "main",
+              entry_point: Borrowed("main"),
           },
       });
     
@@ -1025,6 +1165,8 @@ pub struct State {
     render_passes: HashMap<String, RenderPass>,
     compute_passes: HashMap<String, ComputePass>,
     vertex_buffer_infos: HashMap<String, VertexBufferInfo>,
+//    pool: ,
+//    spawner: ,
 }
 
 use gradu::Texture;  
@@ -1075,7 +1217,7 @@ impl State {
         };
 
         // The camera controller.
-        let camera_controller = CameraController::new(0.1,0.1);
+        let camera_controller = CameraController::new(1.1,0.1);
 
         camera.view = Vector3::new(
             camera_controller.pitch.to_radians().cos() * camera_controller.yaw.to_radians().cos(),
@@ -1486,6 +1628,17 @@ impl State {
             rp.instances = mc_vertex_count/6; 
         }
 
+        let blocks = create_key_blocks(0, 44000, 1); 
+        for i in 0..blocks.len() {
+            println!("{} :: KeyBlock {{key_offset: {}, key_count: {}, buffer_id: {}, buffer_offset: {}}}",
+                i,
+                blocks[i].key_offset,
+                blocks[i].key_count,
+                blocks[i].bucket_id,
+                blocks[i].bucket_offset
+            );
+        }
+
         //println!(" ... OK'");
 
         Self {
@@ -1518,7 +1671,7 @@ impl State {
         self.sc_desc.height = new_size.height;
         self.swap_chain = self.device.create_swap_chain(&self.surface, &self.sc_desc);
 
-        let depth_texture = Texture::create_depth_texture(&self.device, &self.sc_desc, Some("depth-texture"));
+        let depth_texture = Texture::create_depth_texture(&self.device, &self.sc_desc, Some(Borrowed("depth-texture")));
         self.textures.insert(TEXTURES.depth.name.to_string(), depth_texture);
     }
 
@@ -1571,7 +1724,7 @@ impl State {
         };
 
 
-        let mut encoder = self.device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some("Render Encoder"),
+        let mut encoder = self.device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some(Borrowed("Render Encoder")),
         });
 
         match self.example {
@@ -1768,6 +1921,10 @@ fn create_shaders(device: &wgpu::Device) -> HashMap<String, wgpu::ShaderModule> 
 
     print!("    * Creating '{}' shader module from file '{}'",LINE_SHADERS[1].name, LINE_SHADERS[1].source_file);
     shaders.insert(LINE_SHADERS[1].name.to_string(), device.create_shader_module(wgpu::include_spirv!("line_frag.spv")));
+    println!(" ... OK'");
+
+    print!("    * Creating '{}' shader module from file '{}'",RADIX_SHADER.name, RADIX_SHADER.source_file);
+    shaders.insert(RADIX_SHADER.name.to_string(), device.create_shader_module(wgpu::include_spirv!("radix_comp.spv")));
     println!(" ... OK'");
 
     println!("\nShader created!\n");
@@ -1987,6 +2144,11 @@ fn create_vertex_buffers(device: &wgpu::Device, buffers: &mut HashMap::<String, 
         bitonic_rust[i] = random_number;
     }
 
+//    println!("Rust sort");
+//    for i in 0..8192 {
+//        println!("{} :: {}",i, bitonic_rust[i]);
+//    }
+
     let bitonic_buffer = Buffer::create_buffer_from_data::<u32>(
         device,
         &bitonic_rust,
@@ -2001,29 +2163,13 @@ fn create_vertex_buffers(device: &wgpu::Device, buffers: &mut HashMap::<String, 
     let mut hilbert: Vec<f32> = Vec::new(); //vec![0 as u32 ; 64*2];
     //let mut previous: [u32 ; 2] = [0,0];
     for i in 0..(8*8*8) {
-        println!("i == {}", i);
+        //println!("i == {}", i);
         let inverse = hilbert_index_reverse(3, 3, i);
         hilbert.push(inverse[0] as f32 * 0.5);
         hilbert.push(inverse[1] as f32 * 0.5);
         hilbert.push(inverse[2] as f32 * 0.5);
         hilbert.push(((8.0*8.0*8.0) - i as f32) / (8.0*8.0*8.0));
-        //if i == 0 {
-        //    previous = inverse;
-        //    continue;
-        //}
-        //else {
-        //    //println!("previous[0] as f32 * 0.1 == {}", previous[0] as f32 * 0.1); 
-        //    //println!("previous[1] as f32 * 0.1 == {}", previous[1] as f32 * 0.1); 
-        //    hilbert.push(previous[0] as f32 * 0.1);
-        //    hilbert.push(previous[1] as f32 * 0.1);
-        //    previous = inverse;
-        //}
-        //println!("inverse {} :: [{}, {}]",i, inverse[0], inverse[1]); 
     }
-
-    // for i in 0..hilbert.len() {
-    //     println!("{} :: {}", i, hilbert[i]);
-    // }
 
     let hilbert_buffer = Buffer::create_buffer_from_data::<f32>(
         device,
@@ -2031,12 +2177,49 @@ fn create_vertex_buffers(device: &wgpu::Device, buffers: &mut HashMap::<String, 
         wgpu::BufferUsage::VERTEX,
         None
     );
+
     buffers.insert(BUFFERS.hilbert_2d.name.to_string(), hilbert_buffer);
+
     println!(" ... OK'");
-//    println!("Rust sort");
-//    for i in 0..8192 {
-//        println!("{} :: {}",i, bitonic_rust[i]);
-//    }
+
+    //let radix_data_size = 18000;
+    //let mut radix_example_data = vec![0 as u32 ; radix_data_size];
+    //for i in 0..radix_data_size {
+    //    let random_number: u8 = rng.gen(); 
+    //    radix_example_data[i] = (random_number as u32) << 24;
+    //}
+
+    //print!("    * Creating radix_input buffer as '{}'", BUFFERS.radix_input.name);
+    //let radix_initial_data = Buffer::create_buffer_from_data::<u32>(
+    //    device,
+    //    &radix_example_data,
+    //    wgpu::BufferUsage::STORAGE | wgpu::BufferUsage::COPY_DST | wgpu::BufferUsage::COPY_SRC,
+    //    None
+    //);
+    //buffers.insert(BUFFERS.radix_input.name.to_string(), radix_initial_data);
+    //println!(" ... OK'");
+
+    //// TODO: create not from data
+    //print!("    * Creating radix_auxiliary buffer as '{}'", BUFFERS.radix_auxiliary.name);
+    //let radix_auxiliary = Buffer::create_buffer_from_data::<u32>(
+    //    device,
+    //    &radix_example_data,
+    //    wgpu::BufferUsage::STORAGE | wgpu::BufferUsage::COPY_DST | wgpu::BufferUsage::COPY_SRC,
+    //    None
+    //);
+    //buffers.insert(BUFFERS.radix_auxiliary.name.to_string(), radix_auxiliary);
+    //println!(" ... OK'");
+
+    //// TODO: create not from data
+    //print!("    * Creating radix_histogram buffer as '{}'", BUFFERS.radix_histogram.name);
+    //let radix_histogram = Buffer::create_buffer_from_data::<u32>(
+    //    device,
+    //    &radix_example_data,
+    //    wgpu::BufferUsage::STORAGE | wgpu::BufferUsage::COPY_DST | wgpu::BufferUsage::COPY_SRC,
+    //    None
+    //);
+    //buffers.insert(BUFFERS.radix_histogram.name.to_string(), radix_histogram);
+    //println!(" ... OK'");
 
     println!("");
 }
@@ -2056,7 +2239,7 @@ fn create_textures(device: &wgpu::Device, queue: &wgpu::Queue, sc_desc: &wgpu::S
     println!(" ... OK'");
 
     print!("    * Creating depth texture.");
-    let depth_texture = Texture::create_depth_texture(&device, &sc_desc, Some("depth-texture"));
+    let depth_texture = Texture::create_depth_texture(&device, &sc_desc, Some(Borrowed("depth-texture")));
     textures.insert(TEXTURES.depth.name.to_string(), depth_texture);
     println!(" ... OK'");
       
@@ -2132,16 +2315,32 @@ fn create_swap_chain(size: winit::dpi::PhysicalSize<u32>, surface: &wgpu::Surfac
         (sc_desc, swap_chain)
 }
 
-async fn run(window: Window, event_loop: EventLoop<()>) {
+fn run(window: Window, event_loop: EventLoop<()>) {
 
-    let mut state = State::new(&window).await;
+
+
+    let mut state = futures::executor::block_on(State::new(&window));
+
+    #[cfg(feature = "subscriber")]
+    {
+        let chrome_tracing_dir = std::env::var("WGPU_CHROME_TRACING");
+        wgpu::util::initialize_default_subscriber(chrome_tracing_dir.as_ref().map(std::path::Path::new).ok());
+    };
+
+    #[cfg(not(target_arch = "wasm32"))]
+    let (mut pool, spawner) = {
+
+        let local_pool = futures::executor::LocalPool::new();
+        let spawner = local_pool.spawner();
+        (local_pool, spawner)
+    };
 
     event_loop.run(move |event, _, control_flow| {
         let _ = (&state,&window);
 
-        #[cfg(target_arch = "wasm32")] {
-            ControlFlow::Poll;
-        }
+        //#[cfg(target_arch = "wasm32")] {
+        //    ControlFlow::Poll;
+        //}
         
         match event {
             Event::WindowEvent {
@@ -2210,7 +2409,7 @@ async fn run(window: Window, event_loop: EventLoop<()>) {
             }
             Event::RedrawRequested(_) => {
                 //state.update();
-                //state.render();
+                state.render();
             }
             Event::MainEventsCleared => {
                 // RedrawRequested will only trigger once, unless we manually
@@ -2218,9 +2417,11 @@ async fn run(window: Window, event_loop: EventLoop<()>) {
                 ////#[cfg(target_arch = "wasm32")] {
                 ////    window.request_redraw();
                 ////}
-                ////#[cfg(not(target_arch = "wasm32"))] {
+                /////#[cfg(not(target_arch = "wasm32"))] {
+                pool.run_until_stalled();
                 state.update();
-                state.render();
+                window.request_redraw();
+                //state.render();
                 //*control_flow = ControlFlow::Exit;
                 ////}
             }
@@ -2231,14 +2432,36 @@ async fn run(window: Window, event_loop: EventLoop<()>) {
 
 
 fn main() {
+    //let ahhaa: HXTDelaunayOptions  = HXTDelaunayOptions{
+    //    bbox: 0.as_fer(),
+    //    //bbox: *mut HXTBbox,
+    //    nodalSizes: &[],
+    //    //nodalSizes: *mut HXTNodalSizes,
+    //    numVerticesInMesh: 1000,
+    //    insertionFirst: 1,
+    //    partitionability: 1.0,
+    //    verbosity: 0,
+    //    //verbosity: ::std::os::raw::c_int,
+    //    reproducible: ::std::os::raw::1,
+    //    //pub reproducible: ::std::os::raw::c_int,
+    //    delaunayThreads: 1,
+    //    //delaunayThreads: ::std::os::raw::c_int,
+    //};
+    //let ahhaa2 = [HXTNodeInfo, 5];
+    //let joop = hxtDelaunay(13, 15);
+      
     let event_loop = EventLoop::new();
-    let window = winit::window::Window::new(&event_loop).unwrap();
+    let mut builder = winit::window::WindowBuilder::new();
+    builder = builder.with_title("Joo");
+    let window = builder.build(&event_loop).unwrap();
+    //let window = winit::window::Window::new(&event_loop).unwrap();
 
-    #[cfg(not(target_arch = "wasm32"))]
-    {
-        env_logger::init();
-        futures::executor::block_on(run(window, event_loop));
-    }
+    run(window, event_loop);
+//    #[cfg(not(target_arch = "wasm32"))]
+//    {
+//        env_logger::init();
+//        futures::executor::block_on(run(window, event_loop));
+//    }
 //    #[cfg(target_arch = "wasm32")]
 //    {
 //        std::panic::set_hook(Box::new(console_error_panic_hook::hook));

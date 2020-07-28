@@ -1,44 +1,53 @@
 #version 450
 
-#define THREADS 64 
-#define LOCAL_SORT_THRESHOLD 8192
-// 9216 (64*144) 
-
-#define BITONIC_SIZE 1024 
-#define BITONIC_KPT 4 // keys per thread. 
-
-#define VERY_BIG_NUMBER 0xffffffff
- // should inf be used instead? 
+#define THREADS 256 
+#define KPT 16 
+#define RADIX 256 
+#define KPB 4096
 
 layout(local_size_x = THREADS) in;
 
 struct KeyBlock {
 	uint key_offset;
 	uint key_count;
-	uint buffer_id;
-	uint buffer_offset;
+	uint bucket_id;
+	uint bucket_offset;
 };
 
 struct LocalSortBlock {
-	uint buffer_id;
-	uint buffer_offset;
+	uint bucket_id;
+	uint bucket_offset;
 	uint is_merged;
 };
 
+layout(local_size_x = THREADS) in;
+
+shared uint[256] histogram;
+shared uint[256] prefix_sum;
+const uint THREAD_OFFSET = KPB / KPT;
+
 /***************************************************************************************/
 
-//// Parameters that stay constants in kernel launch.
+// Parameters that stay constants in kernel launch.
 //layout(set = 0, binding = 0) uniform RadixSortParams {
-//    vec4 blah;		
-//} params;
-//
-//layout(set = 1, binding = 0) buffer Current {
-//    RayOutput[] ray_output;
+//    uint number_of_keyblocks;		
 //};
-//
-//layout(set = 2, binding = 0) buffer Swap {
-//    uint[] frame_output;
-//};
+
+layout(set = 0, binding = 0) buffer Input1 {
+    uint[] input_buffer1;
+};
+
+layout(set = 1, binding = 0) buffer Input2 {
+    uint[] input_buffer2;
+};
+
+layout(set = 2, binding = 0) buffer Histograms {
+    uint[] histograms;
+};
+
+layout(set = 3, binding = 0) buffer Keyblocks {
+    KeyBlock[] key_blocks;
+};
 
 /***************************************************************************************/
 
@@ -52,45 +61,77 @@ uint extract_digit_msd(uint key, int amount) {
 
 /***************************************************************************************/
 
-// Bitonic sort.
-//void bitonic(int j, int k) {
-//  uint output_index =
-//    (gl_GlobalInvocationID.x ) +
-//    gl_NumWorkGroups.x * gl_WorkGroupSize.x * (gl_GlobalInvocationID.y) + 
-//    gl_NumWorkGroups.x * gl_WorkGroupSize.x * gl_NumWorkGroups.y * gl_WorkGroupSize.y * (gl_GlobalInvocationID.z);
-//
-//        shared int temp[BITONIC_SIZE];
-//	const local_id_x = gl_LocalInvocationID.x; 
-//	const local_size = gl_WorkGroupSize.x;
-//
-//	for (int i=0 ; i<BITONIC_KPT; i++) {
-//		int i = local_id
-//	}
-//
-//
-//
-//	const uint i = gl_GlobalInvocationID.x;
-//        const uint ixj = i^j; 
-//	if ((ixj)>i) {
-//		if ((i&k) == 0) {
-//			if (values[i] > values[ixj] { // swap values.
-//				float temp = dev_values[i];
-//				values[i] = values[ixj];
-//                                values[ixj] = temp;
-//			}
-//		}
-//	}
-//	if ((i&k) != 0) {
-//		if (values[i] < values[ixj]) {
-//			float temp = dev_values[i];
-//			values[i] = values[ixj];
-//                        values[ixj] = temp;
-//		
-//		}
-//	}
-//}
-//
-
 void main() {
 
+  uint local_id_x = gl_LocalInvocationID.x;
+  uint group_x = gl_WorkGroupID.x;
+
+  uint thread_keys[KPT];
+  // uint thread_digits[KPT];
+
+  // Init local histogram to '0'
+  for (uint i=local_id_x ; i<RADIX ; i += THREAD_OFFSET) {
+    histogram[i] = 0;
+  }
+
+  // Synchronize threads.
+  barrier();
+
+// struct KeyBlock {
+// 	uint key_offset;
+// 	uint key_count;
+// 	uint bucket_id;
+// 	uint bucket_offset;
+// };
+
+  // Get the current key_block.
+  const KeyBlock keyBlock = key_blocks[group_x];
+  const uint base_key_index = keyBlock.key_offset;
+  const uint last_key_index = keyBlock.key_offset + keyBlock.key_count;
+
+  // Load each thread's keys
+  for (int i=0 ; i<KPT; i++) {
+    const uint key_index = base_key_index + i * THREAD_OFFSET;
+    if (key_index < last_key_index) thread_keys[i] = input_buffer1[local_id_x + THREAD_OFFSET];
+  }
+
+  // Get digits of thread's keys.
+  for (int i=0 ; i < KPT ; i++) {
+    const uint key_index = base_key_index + i * THREAD_OFFSET;
+    if (key_index < last_key_index) {
+        uint digit = extract_digit_msd(thread_keys[i],24);
+        uint index = atomicAdd(histogram[digit], 1);
+    }
+  }
+
+  barrier();
+
+  // Copy local histogram to the local prefix-sum array.
+  for (uint i=local_id_x ; i<RADIX ; i += THREADS) {
+    prefix_sum[i] = histogram[i];
+  }
+
+  barrier();
+
+  // Calculate the local prefix sum to p_sum array. TODO: up-down sweep.
+
+//    for (int j=1; j <= 128 ; j <<= 1) {
+//      barrier(CLK_LOCAL_MEM_FENCE);
+//      for (int i=local_id_x ; i<RADIX ; i += local_id_x_size) {
+//        uint current_value = p_sum[i];
+//        uint value_to_add = i - j >= 0 ? p_sum[i-j] : 0;
+//        p_sum_temp[i] = current_value + value_to_add; // Optimize
+//      }
+//      barrier(CLK_LOCAL_MEM_FENCE);
+//      for (int i=local_id_x ; i<RADIX ; i += local_id_x_size) {
+//        p_sum[i] = p_sum_temp[i];
+//      }
+//    }
+//
+//  for (int i=local_id_x ; i<RADIX ; i += local_id_x_size) {
+//    atomic_add(&counter_histogram[i], histogram[i]);
+//    if ((i+1) < 256) atomic_add(&counter_prefix_sum[i+1], p_sum[i]);
+//  }
+
+//  if (local_id_x == 0) p_sum[0] = 0;
 }

@@ -1,5 +1,5 @@
 //use std::collections::HashMap;
-
+use std::borrow::Cow::Borrowed;
 //pub mod gradu {
 
     use std::mem;
@@ -98,9 +98,9 @@
             }
         }
     
-        pub fn create_buffer(device: &wgpu::Device, capacity: u64, usage: wgpu::BufferUsage, label: Option<&str>) -> Self {
+        pub fn create_buffer(device: &wgpu::Device, capacity: u64, usage: wgpu::BufferUsage, label: Option<std::borrow::Cow<&str>>) -> Self {
             let buffer = device.create_buffer(&wgpu::BufferDescriptor {
-                label: label,
+                label: Some(Borrowed("erkki")),
                 size: capacity,
                 usage: usage,
                 mapped_at_creation: false,
@@ -186,7 +186,7 @@
         pub const DEPTH_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth32Float;
         //pub const IMAGE_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba8Unorm;
     
-        pub fn create_depth_texture(device: &wgpu::Device, sc_desc: &wgpu::SwapChainDescriptor, label: Option<&str>) -> Self {
+        pub fn create_depth_texture(device: &wgpu::Device, sc_desc: &wgpu::SwapChainDescriptor, label: Option<std::borrow::Cow<str>>) -> Self {
     
             let width = sc_desc.width; 
             let height = sc_desc.height; 
@@ -235,7 +235,7 @@
         /// its adding automaticallhy an alpha value of
         /// 255 to the image. TODO: check if aplha value already exists. TODO: allow a texture to been
         /// created from non png data.
-        pub fn create_from_bytes(queue: &wgpu::Queue, device: &wgpu::Device, sc_desc: &wgpu::SwapChainDescriptor, sample_count : u32, bytes: &[u8], label: Option<&str>) -> Self {
+        pub fn create_from_bytes(queue: &wgpu::Queue, device: &wgpu::Device, sc_desc: &wgpu::SwapChainDescriptor, sample_count : u32, bytes: &[u8], label: Option<std::borrow::Cow<str>>) -> Self {
     
             let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
                 address_mode_u: wgpu::AddressMode::MirrorRepeat,

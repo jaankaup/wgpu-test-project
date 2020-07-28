@@ -14,31 +14,29 @@ name = "eikonal_application"
 path = "src/main.rs"
 
 [dependencies]
-#wgpu = { version = "0.5.0", features = [ "gfx-backend-vulkan"] }
-wgpu = { git = "https://github.com/gfx-rs/wgpu-rs", branch = "master"}
+wgpu = { git = "https://github.com/gfx-rs/wgpu-rs", branch = "master", features = ["subscriber","trace"]}
 hilbert_project = { git = "https://github.com/jaankaup/Hilbert", branch = "master"}
-#wgpu = { version = "0.5.0", features = [ "vulkan" ] }
 winit = { version = "0.22.1", features = ["web-sys"] }
 futures = "0.3"
 env_logger = "0.7"
 raw-window-handle = "0.3"
-#zerocopy = "0.3"
 log = "0.4"
 cgmath = "0.17"
 image = "0.23"
 png = "0.15"
 bytemuck = "1"
 mindtree_utils = "0.4.0"
-#shaderc = "0.6"
 num-traits = "0.2.12"
 rand = "0.7.3"
-#fixed = "1.0.0"
+
+#[build-dependencies]
+#bindgen = "0.53.1"
 
 [dependencies.wgt]
 package = "wgpu-types"
 version = "0.5"
 git = "https://github.com/gfx-rs/wgpu"
-rev = "041db60f9080769b5edc40888cf9683ccb255399"
+rev = "11b3a95671d096aae2eac0d187be5472b5ab91c0"
 
 #[target.'cfg(all(unix, not(target_os = "ios"), not(target_os = "macos")))'.depencendies]
 #gfx-backend-vulkan = "0.5.6"
