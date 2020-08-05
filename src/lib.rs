@@ -1,13 +1,16 @@
 //use std::collections::HashMap;
 use std::borrow::Cow::Borrowed;
+use wgpu::util::DeviceExt;
 //pub mod gradu {
 
     use std::mem;
     use bytemuck::{Pod, Zeroable};
-    use utils::math::{clamp};
+    //use utils::math::{clamp};
     //use num_traits::{Num};
     use std::convert::TryInto;
     //use fixed::traits::*;
+    //use serde::{Serialize, Deserialize};
+    //use ron::de::from_str;
     
     use cgmath::{prelude::*, Vector3, Vector4, Point3};
     
@@ -84,9 +87,12 @@ use std::borrow::Cow::Borrowed;
             label: Option<String>)
         -> Self {
              
-            let buffer = device.create_buffer_with_data(
-                bytemuck::cast_slice(&t),
-                usage,
+            let buffer = device.create_buffer_init(
+                &wgpu::util::BufferInitDescriptor {
+                    label: None,
+                    contents: bytemuck::cast_slice(&t),
+                    usage: usage,
+                }
             );
             let capacity = mem::size_of::<T>() * t.len();
             let capacity_used = Some(capacity);
@@ -100,7 +106,7 @@ use std::borrow::Cow::Borrowed;
     
         pub fn create_buffer(device: &wgpu::Device, capacity: u64, usage: wgpu::BufferUsage, label: Option<std::borrow::Cow<&str>>) -> Self {
             let buffer = device.create_buffer(&wgpu::BufferDescriptor {
-                label: Some(Borrowed("erkki")),
+                label: Some(Borrowed("blah")),
                 size: capacity,
                 usage: usage,
                 mapped_at_creation: false,
@@ -262,23 +268,46 @@ use std::borrow::Cow::Borrowed;
                 panic!("Bits per pixel must be 3 or 4. Bits per pixel == {}", bits_per_pixel); 
             }
     
-            let mut buffer = vec![0; (info.width * bits_per_pixel * info.height) as usize ];
+            let mut buffer: Vec<u8> = vec![0; (info.width * bits_per_pixel * info.height) as usize ];
             reader.next_frame(&mut buffer).unwrap(); //expect("Can't read next frame.");
     
             // TODO: check the size of the image.
     
     
+            //let mut temp: Vec<u8> = Vec::new();
+            //let mut counter = 0; 
+    
+            //// The png has only rgb components. Add the alpha component to each texel. 
+            //if bits_per_pixel == 3 {
+            //    for i in 0..buffer.len() {
+            //        if counter == 2 { counter = 0; temp.push(buffer[i]); temp.push(255); }
+            //        else {
+            //            temp.push(buffer[i]);
+            //            counter = counter + 1;
+            //        }
+            //    }
+            //}
+
             let mut temp: Vec<u8> = Vec::new();
             let mut counter = 0; 
     
             // The png has only rgb components. Add the alpha component to each texel. 
             if bits_per_pixel == 3 {
-                for i in 0..buffer.len() {
-                    if counter == 2 { counter = 0; temp.push(buffer[i]); temp.push(255); }
-                    else {
-                        temp.push(buffer[i]);
-                        counter = counter + 1;
-                    }
+                for i in 0..buffer.len()/3 {
+                    let offset = i*3;
+                    let red: u8 = buffer[offset];
+                    let green: u8 = buffer[offset+1];
+                    let blue: u8 = buffer[offset+2];
+                    temp.push(blue); // blue
+                    temp.push(green); // green
+                    temp.push(red); // red
+                    temp.push(255); // alpha
+                    //if counter == 2 { counter = 0; temp.push(buffer[i]); temp.push(127); }
+                    //else {
+                    //    //temp.push(buffer[i]);
+                    //    temp.push((buffer[i] as i32 - 128 as i32) as u8);
+                    //    counter = counter + 1;
+                    //}
                 }
             }
     
@@ -319,14 +348,14 @@ use std::borrow::Cow::Borrowed;
     
             let view = texture.create_view(&wgpu::TextureViewDescriptor {
                 label: None,
-                format: wgpu::TextureFormat::Rgba8UnormSrgb,
+                format: sc_desc.format,
                 dimension: wgpu::TextureViewDimension::D2,
                 //aspect: wgpu::TextureAspect::default(),
                 aspect: wgpu::TextureAspect::All,
                 base_mip_level: 0,
-                level_count: 1,
+                level_count: Some(1),
                 base_array_layer: 0,
-                array_layer_count: 1,
+                array_layer_count: Some(1),
             });
     
             let texture_type = TextureType::Diffuse;
@@ -381,14 +410,14 @@ use std::borrow::Cow::Borrowed;
             let view = texture.create_view(&wgpu::TextureViewDescriptor {
                 label: None,
                 //format: wgpu::TextureFormat::Rgba8UnormSrgb,
-                format: wgpu::TextureFormat::Rgba8UnormSrgb,
+                format: sc_desc.format,// gpu::TextureFormat::Rgba8UnormSrgb,
                 dimension: wgpu::TextureViewDimension::D2,
                 //aspect: wgpu::TextureAspect::default(),
                 aspect: wgpu::TextureAspect::All,
                 base_mip_level: 0,
-                level_count: 1,
+                level_count: Some(1),
                 base_array_layer: 0,
-                array_layer_count: 1,
+                array_layer_count: Some(1),
             });
     
             let texture_type = TextureType::Diffuse;
@@ -441,14 +470,14 @@ use std::borrow::Cow::Borrowed;
     
             let view = texture.create_view(&wgpu::TextureViewDescriptor {
                 label: None,
-                format: wgpu::TextureFormat::Rgba8UnormSrgb,
+                format: *format,// wgpu::TextureFormat::Rgba8UnormSrgb,
                 dimension: wgpu::TextureViewDimension::D3,
                 //aspect: wgpu::TextureAspect::default(),
                 aspect: wgpu::TextureAspect::All,
                 base_mip_level: 0,
-                level_count: 1,
+                level_count: Some(1),
                 base_array_layer: 0,
-                array_layer_count: 1,
+                array_layer_count: Some(1),
             });
     
             let texture_type = TextureType::Diffuse;
@@ -819,7 +848,7 @@ use std::borrow::Cow::Borrowed;
                 sample_count: 4,
                 dimension: wgpu::TextureDimension::D1,
                 //format: wgpu::TextureFormat::Rgba8Uint,
-                format: wgpu::TextureFormat::Rgba8UnormSrgb,
+                format: wgpu::TextureFormat::Rgba8UnormSrgb, // TODO: sc_dest.format
                 usage: wgpu::TextureUsage::SAMPLED | wgpu::TextureUsage::COPY_DST,
                 label: None,
             });
@@ -841,13 +870,13 @@ use std::borrow::Cow::Borrowed;
     
             let view = texture.create_view(&wgpu::TextureViewDescriptor {
                 label: None,
-                format: wgpu::TextureFormat::Rgba8UnormSrgb,
+                format: wgpu::TextureFormat::Rgba8UnormSrgb,// TODO: sc_dest.format
                 dimension: wgpu::TextureViewDimension::D1,
                 aspect: wgpu::TextureAspect::default(),
                 base_mip_level: 0,
-                level_count: 0,
+                level_count: Some(0),
                 base_array_layer: 0,
-                array_layer_count: 0,
+                array_layer_count: Some(0),
             });
     
             let texture_type = TextureType::Diffuse;
@@ -1097,6 +1126,7 @@ use std::borrow::Cow::Borrowed;
                 let (x,y) = (x1 - x0, y1 - y0); 
     
                 self.pitch = clamp(self.pitch + (self.sensitivity as f32 * (y * (-1.0)) as f32) , -89.0,89.0);
+                //self.pitch = clamp(self.pitch + (self.sensitivity as f32 * (y * (-1.0)) as f32) , -89.0,89.0);
                 self.yaw = self.yaw + self.sensitivity * x as f32 ;
     
                 // println!("yaw/pitch = ({},{})", self.yaw, self.pitch);
@@ -1434,6 +1464,12 @@ use std::borrow::Cow::Borrowed;
     
         p_data
     
+    }
+
+    fn clamp(val: f32, min: f32, max: f32) -> f32 {
+        let result  = if val >= max { max } else { val };
+        let result2 = if result <= min { min } else { val };
+        result2
     }
 //}
 

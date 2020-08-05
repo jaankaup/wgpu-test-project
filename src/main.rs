@@ -1,3 +1,4 @@
+use futures::task::LocalSpawn;
 use crate::radix_sort::create_key_blocks;
 use std::borrow::Cow::Borrowed;
 use futures::executor::LocalPool;
@@ -7,6 +8,8 @@ use std::collections::HashMap;
 use rand::prelude::*;
 use std::time::{SystemTime, UNIX_EPOCH};
 use jaankaup_hilbert::hilbert::hilbert_index_reverse;
+//use serde::{Serialize, Deserialize};
+//use ron::de::from_str;
 
 use cgmath::{prelude::*, Vector3};
 
@@ -74,7 +77,7 @@ static N_3D_RES: (u32, u32, u32) = (128,128,128);
 // released and recreated based on the program state. 
 
 static TEXTURES: Textures = Textures {
-    grass:       TextureInfo { name: "GrassTexture",     source: Some("grass1.png"), width: None,                      height: None,                      depth: None, },
+    grass:       TextureInfo { name: "GrassTexture",     source: Some("grass2.png"), width: None,                      height: None,                      depth: None, },
     rock:        TextureInfo { name: "rock_texture",     source: Some("rock.png"),   width: None,                      height: None,                      depth: None, },
     noise3d:     TextureInfo { name: "noise_3d_texture", source: None,               width: Some(N_3D_RES.0),          height: Some(N_3D_RES.1),          depth: Some(N_3D_RES.2), },
     depth:       TextureInfo { name: "depth_texture",    source: None,               width: None,                      height: None,                      depth: None, },
@@ -152,15 +155,15 @@ impl RenderPass {
                     wgpu::RenderPassColorAttachmentDescriptor {
                             attachment: match multi_sampled { false => &frame.view, true => &multisampled_framebuffer, },
                             resolve_target: match multi_sampled { false => None, true => Some(&frame.view), },
-                        ops: wgpu::Operations {
-                            load: wgpu::LoadOp::Clear(wgpu::Color { 
-                                r: 0.0,
-                                g: 0.0,
-                                b: 0.0,
-                                a: 1.0,
-                            }),
-                            store: true,
-                        },
+                            ops: wgpu::Operations {
+                                load: wgpu::LoadOp::Clear(wgpu::Color { 
+                                    r: 0.0,
+                                    g: 0.0,
+                                    b: 0.0,
+                                    a: 1.0,
+                                }),
+                                store: true,
+                            },
                     }
                 ]),
                 //depth_stencil_attachment: None,
@@ -1159,7 +1162,7 @@ pub struct State {
     camera_uniform: CameraUniform,
     example: Example,
     ray_camera_uniform: gradu::RayCameraUniform,
-    time_counter: u128,
+    //time_counter: u128,
     multisampled_framebuffer: wgpu::TextureView,
     sample_count: u32,
     render_passes: HashMap<String, RenderPass>,
@@ -1176,10 +1179,10 @@ impl State {
     /// Initializes the project resources and returns the intance for State object. 
     pub async fn new(window: &Window) -> Self {
 
-        let start = SystemTime::now(); 
-        let time_counter = start
-            .duration_since(UNIX_EPOCH)
-            .expect("Could't get the time.").as_nanos();
+        //let start = SystemTime::now(); 
+        //let time_counter = start
+        //    .duration_since(UNIX_EPOCH)
+        //    .expect("Could't get the time.").as_nanos();
 
         let sample_count = 1;
                                                                                   
@@ -1656,7 +1659,7 @@ impl State {
             textures,
             example,
             ray_camera_uniform,
-            time_counter,
+            //time_counter,
             multisampled_framebuffer, 
             sample_count,
             render_passes,
@@ -1687,14 +1690,14 @@ impl State {
 
     pub fn update(&mut self) {
 
-        let start = SystemTime::now();
-        let time_now = start
-            .duration_since(UNIX_EPOCH)
-            .expect("Could't get the time.").as_nanos();
-        let time_delta = time_now - self.time_counter;
+        //let start = SystemTime::now();
+        //let time_now = start
+        //    .duration_since(UNIX_EPOCH)
+        //    .expect("Could't get the time.").as_nanos();
+        //let time_delta = time_now - self.time_counter;
 
-        self.time_counter = time_now;
-        self.ray_camera.aperture_radius = self.ray_camera.aperture_radius + 36.0 * ((time_delta as f32) * 0.0000000001).sin();
+        //self.time_counter = time_now;
+        //self.ray_camera.aperture_radius = self.ray_camera.aperture_radius + 36.0 * ((time_delta as f32) * 0.0000000001).sin();
 
         self.camera_uniform.update_view_proj(&self.camera);
         self.ray_camera_uniform.update(&self.ray_camera);
@@ -2276,7 +2279,7 @@ async fn create_sdqs(window: &winit::window::Window) -> (wgpu::Surface, wgpu::De
         // Create the adapter.
         let adapter = instance.request_adapter(
             &wgpu::RequestAdapterOptions {
-                power_preference: wgpu::PowerPreference::Default,
+                power_preference: wgpu::PowerPreference::HighPerformance, // Default
                 compatible_surface: Some(&surface),
             },
         )
@@ -2305,7 +2308,8 @@ fn create_swap_chain(size: winit::dpi::PhysicalSize<u32>, surface: &wgpu::Surfac
                                             
         let sc_desc = wgpu::SwapChainDescriptor {
             usage: wgpu::TextureUsage::OUTPUT_ATTACHMENT,
-            format: wgpu::TextureFormat::Bgra8UnormSrgb, // supported [Bgra8Unorm, Bgra8Srgb]
+            //format: wgpu::TextureFormat::Bgra8Unorm,
+            format: if cfg!(target_arch = "wasm32") { wgpu::TextureFormat::Bgra8Unorm } else { wgpu::TextureFormat::Bgra8UnormSrgb },
             width: size.width,
             height: size.height,
             present_mode: wgpu::PresentMode::Mailbox,
@@ -2315,13 +2319,9 @@ fn create_swap_chain(size: winit::dpi::PhysicalSize<u32>, surface: &wgpu::Surfac
         (sc_desc, swap_chain)
 }
 
-fn run(window: Window, event_loop: EventLoop<()>) {
+fn run(window: Window, event_loop: EventLoop<()>, mut state: State) {
 
-
-
-    let mut state = futures::executor::block_on(State::new(&window));
-
-    #[cfg(feature = "subscriber")]
+    #[cfg(all(not(target_arch = "wasm32"), feature = "subscriber"))]
     {
         let chrome_tracing_dir = std::env::var("WGPU_CHROME_TRACING");
         wgpu::util::initialize_default_subscriber(chrome_tracing_dir.as_ref().map(std::path::Path::new).ok());
@@ -2334,6 +2334,37 @@ fn run(window: Window, event_loop: EventLoop<()>) {
         let spawner = local_pool.spawner();
         (local_pool, spawner)
     };
+
+    #[cfg(target_arch = "wasm32")]
+    let spawner = {
+        use futures::{future::LocalFutureObj, task::SpawnError};
+        use winit::platform::web::WindowExtWebSys;
+
+        struct WebSpawner {}
+        impl LocalSpawn for WebSpawner {
+            fn spawn_local_obj(
+                &self,
+                future: LocalFutureObj<'static, ()>,
+            ) -> Result<(), SpawnError> {
+                Ok(wasm_bindgen_futures::spawn_local(future))
+            }
+        }
+
+        //std::panic::set_hook(Box::new(console_error_panic_hook::hook));
+
+        // On wasm, append the canvas to the document body
+        web_sys::window()
+            .and_then(|win| win.document())
+            .and_then(|doc| doc.body())
+            .and_then(|body| {
+                body.append_child(&web_sys::Element::from(window.canvas()))
+                    .ok()
+            })
+            .expect("couldn't append canvas to document body");
+
+        WebSpawner {}
+    };
+
 
     event_loop.run(move |event, _, control_flow| {
         let _ = (&state,&window);
@@ -2418,7 +2449,11 @@ fn run(window: Window, event_loop: EventLoop<()>) {
                 ////    window.request_redraw();
                 ////}
                 /////#[cfg(not(target_arch = "wasm32"))] {
-                pool.run_until_stalled();
+                #[cfg(not(target_arch = "wasm32"))]
+                {
+                    pool.run_until_stalled();
+                }
+
                 state.update();
                 window.request_redraw();
                 //state.render();
@@ -2455,28 +2490,43 @@ fn main() {
     builder = builder.with_title("Joo");
     let window = builder.build(&event_loop).unwrap();
     //let window = winit::window::Window::new(&event_loop).unwrap();
+      
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        let mut state = futures::executor::block_on(State::new(&window));
+        run(window, event_loop, state);
+    }
 
-    run(window, event_loop);
+    //#[cfg(target_arch = "wasm32")]
+    //let title = title.to_owned();
+    //wasm_bindgen_futures::spawn_local(async move {
+    //    let setup = setup::<E>(&title).await;
+    //    start::<E>(setup);
+    //});
+
+    //run(window, event_loop);
 //    #[cfg(not(target_arch = "wasm32"))]
 //    {
 //        env_logger::init();
 //        futures::executor::block_on(run(window, event_loop));
 //    }
-//    #[cfg(target_arch = "wasm32")]
-//    {
-//        std::panic::set_hook(Box::new(console_error_panic_hook::hook));
-//        console_log::init().expect("could not initialize logger");
-//        use winit::platform::web::WindowExtWebSys;
-//        // On wasm, append the canvas to the document body
-//        web_sys::window()
-//            .and_then(|win| win.document())
-//            .and_then(|doc| doc.body())
-//            .and_then(|body| {
-//                body.append_child(&web_sys::Element::from(window.canvas()))
-//                    .ok()
-//            })
-//            .expect("couldn't append canvas to document body");
-//        wasm_bindgen_futures::spawn_local(run(window, event_loop));
-//        //wasm_bindgen_futures::spawn_local(run_async::<E>(event_loop, window));
-//    }
+    #[cfg(target_arch = "wasm32")]
+    {
+        std::panic::set_hook(Box::new(console_error_panic_hook::hook));
+        console_log::init().expect("could not initialize logger");
+        use winit::platform::web::WindowExtWebSys;
+        // On wasm, append the canvas to the document body
+        web_sys::window()
+            .and_then(|win| win.document())
+            .and_then(|doc| doc.body())
+            .and_then(|body| {
+                body.append_child(&web_sys::Element::from(window.canvas()))
+                    .ok()
+            })
+            .expect("couldn't append canvas to document body");
+        //let mut state = futures::executor::block_on(State::new(&window));
+        //async { let mut state = wasm_bindgen_futures::spawn_local(State::new(&window)).await; };
+        wasm_bindgen_futures::spawn_local(async move {let mut state = State::new(&window).await; run(window, event_loop, state);});
+        //wasm_bindgen_futures::spawn_local(run_async::<E>(event_loop, window));
+    }
 }

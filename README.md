@@ -18,7 +18,7 @@ This project implements the following features/algorithms.
 
 Shortkeys
 
-* `s` Move left.
+* `a` Move left.
 * `d` Move right.
 * `w` Move forward.
 * `s` Move backward.
@@ -30,3 +30,4 @@ Shortkeys
 * `Key4` Random triangles.
 * `Key5` Volumetric ray caster (noise functions).
 * `Key6` Volumetric ray caster (3d texture).
+* `Key7` Test for hilberd indices.

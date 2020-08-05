@@ -14,20 +14,24 @@ name = "eikonal_application"
 path = "src/main.rs"
 
 [dependencies]
-wgpu = { git = "https://github.com/gfx-rs/wgpu-rs", branch = "master", features = ["subscriber","trace"]}
+#wgpu = { git = "https://github.com/gfx-rs/wgpu-rs", branch = "master", features = ["subscriber","trace"]}
+wgpu = { git = "https://github.com/gfx-rs/wgpu-rs", branch = "master"}
 hilbert_project = { git = "https://github.com/jaankaup/Hilbert", branch = "master"}
 winit = { version = "0.22.1", features = ["web-sys"] }
 futures = "0.3"
-env_logger = "0.7"
+#env_logger = "0.7"
 raw-window-handle = "0.3"
 log = "0.4"
 cgmath = "0.17"
-image = "0.23"
-png = "0.15"
+#image = "0.23"
+png = "0.16"
 bytemuck = "1"
-mindtree_utils = "0.4.0"
-num-traits = "0.2.12"
-rand = "0.7.3"
+#mindtree_utils = "0.4.0"
+#num-traits = "0.2.12"
+rand = { version = "0.7.3", features = ["wasm-bindgen"] }
+#rand = { version = "0.7.3, features = ["wasm-bindgen"] }
+#serde = { version = "1.0.104", features = ["derive"] } 
+#ron = "0.5.1"
 
 #[build-dependencies]
 #bindgen = "0.53.1"
@@ -38,13 +42,13 @@ version = "0.5"
 git = "https://github.com/gfx-rs/wgpu"
 rev = "11b3a95671d096aae2eac0d187be5472b5ab91c0"
 
-#[target.'cfg(all(unix, not(target_os = "ios"), not(target_os = "macos")))'.depencendies]
-#gfx-backend-vulkan = "0.5.6"
+[target.'cfg(all(unix, not(target_os = "ios"), not(target_os = "macos")))'.depencendies]
+gfx-backend-vulkan = "0.5.6"
 #gfx-backend-vulkan = { version = "0.5.6", features = ["vulkan"] }
 #gfx-backend-vulkan = { version = "0.5", features = ["x11"] }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
-wasm-bindgen = "0.2.63"
+wasm-bindgen = "0.2.67"
 web-sys = {version = "0.3.40", features = [
   "Document",
     "Navigator",
@@ -131,22 +135,26 @@ web-sys = {version = "0.3.40", features = [
     "GpuVertexAttributeDescriptor",
     "HtmlCanvasElement",
     "Window",
-
 ]}
 js-sys = "0.3.39"
 wasm-bindgen-futures = "0.4.12"
 console_error_panic_hook = "0.1.6"
 console_log = "0.1.2"
 
+#[target.'cfg(target_arch = "wasm32")'.dev-dependencies]
+#[target.'cfg(target_arch = "wasm32")']
+#console_error_panic_hook = "0.1.6"
+#console_log = "0.1.2"
+
 [profile.dev]
-opt-level = 0
-debug = true
+opt-level = 3
+debug = false
 
 [profile.release]
 opt-level = 3
 debug = false
 
-#[target.'cfg(target_arch = "wasm32")'.dev-dependencies]
 #[target.'cfg(target_arch = "wasm32")']
+#[target.'cfg(target_arch = "wasm32")'.dev-dependencies]
 #console_error_panic_hook = "0.1.6"
 #console_log = "0.1.2"
